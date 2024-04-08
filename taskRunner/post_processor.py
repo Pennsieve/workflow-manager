@@ -15,7 +15,7 @@ def main():
     api_key = sys.argv[2] # pass from gateway, differ per app?
     api_secret = sys.argv[3] # pass from gateway
     pennsieve_host = os.environ['PENNSIEVE_API_HOST']
-    # session_token = sys.argv[4] # should get new session token now that an orchestrator calls the post processor
+
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
     r.raise_for_status()
@@ -37,7 +37,6 @@ def main():
     )
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
-    print("token: ", session_token)
 
     task_definition_name = os.environ['TASK_DEFINITION_NAME_POST']
     subnet_ids = os.environ['SUBNET_IDS']
@@ -124,7 +123,7 @@ def main():
             tasks=[task_arn],
         )
 
-        print("Fargate Task has stopped" + task_definition_name)
+        print("Fargate Task has stopped: " + task_definition_name)
 
 
 # Standard boilerplate to call the main() function to begin
