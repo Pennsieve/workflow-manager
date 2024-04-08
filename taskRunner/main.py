@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from boto3 import client as boto3_client
-from botocore.waiter import WaiterModel
 # import modules used here -- sys is a very standard one
 import sys
 import os
@@ -56,20 +55,17 @@ def main():
         task_arn = response['tasks'][0]['taskArn']
 
 
-        waiter_config = {
-            'Delay': 15,
-            'MaxAttempts': 200,
-            'Operation': {'client': ecs_client, 'name': 'tasks_stopped'}
-        }
-
-        waiter = WaiterModel(waiter_config).create_waiter_with_client(ecs_client)
+        waiter = ecs_client.get_waiter('tasks_stopped')
         waiter.wait(
             cluster=cluster_name,
             tasks=[task_arn],
+            WaiterConfig={
+                'Delay': 15,
+                'MaxAttempts': 200
+            }
         )
 
         print("Fargate Task has stopped: " + task_definition_name)
-
 
 # Standard boilerplate to call the main() function to begin
 # the program.
