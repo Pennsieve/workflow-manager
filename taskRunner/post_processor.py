@@ -14,6 +14,7 @@ def main():
     integration_id = sys.argv[1] # pass from gateway
     api_key = sys.argv[2] # pass from gateway, differ per app?
     api_secret = sys.argv[3] # pass from gateway
+    pennsieve_host = os.environ['PENNSIEVE_API_HOST']
     # session_token = sys.argv[4] # should get new session token now that an orchestrator calls the post processor
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
