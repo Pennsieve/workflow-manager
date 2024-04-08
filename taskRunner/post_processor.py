@@ -1,20 +1,12 @@
 #!/usr/bin/python3
 
 from boto3 import client as boto3_client
-from botocore.config import Config
 # import modules used here -- sys is a very standard one
 import sys
 import os
 import requests
 
-config = Config(
-   retries = {
-      'max_attempts': 240,
-      'mode': 'standard'
-   }
-)
-
-ecs_client = boto3_client("ecs", region_name=os.environ['REGION'], config=config)
+ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
