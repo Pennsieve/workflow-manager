@@ -16,9 +16,17 @@ func main() {
 
 	log.Println("Welcome to the WorkflowManager")
 	log.Println("Starting pipeline")
+	integrationID := os.Getenv("INTEGRATION_ID")
+	apiKey := os.Getenv("PENNSIEVE_API_KEY")
+	apiSecret := os.Getenv("PENNSIEVE_API_SECRET")
+	sessionToken := os.Getenv("SESSION_TOKEN")
 
 	// run pipeline
-	cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false")
+	cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+		"--integrationID", integrationID,
+		"--apiKey", apiKey,
+		"--apiSecret", apiSecret,
+		"--sessionToken", sessionToken)
 	cmd.Dir = "/service"
 	var stdout strings.Builder
 	var stderr strings.Builder
