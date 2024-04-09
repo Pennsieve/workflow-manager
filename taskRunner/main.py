@@ -60,8 +60,8 @@ def main():
             cluster=cluster_name,
             tasks=[task_arn],
             WaiterConfig={
-                'Delay': 15,
-                'MaxAttempts': 200
+                'Delay': 30,
+                'MaxAttempts': 300
             }
         )
 
