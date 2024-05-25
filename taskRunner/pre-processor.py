@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 from boto3 import client as boto3_client
+from boto3 import session as boto3_session
 import sys
 import os
 import requests
@@ -13,25 +14,6 @@ def main():
     integration_id = sys.argv[1] # pass from gateway
     api_key = sys.argv[2] # pass from gateway, differ per app
     api_secret = sys.argv[3] # pass from gateway
-
-    # Create a Secrets Manager client
-    session = boto3_session.Session()
-    client = session.client(
-        service_name='secretsmanager',
-        region_name=region_name
-    )
-
-    try:
-        get_secret_value_response = client.get_secret_value(
-            SecretId=secret_name
-        )
-    except ClientError as e:
-        raise e
-
-    # Decrypts secret using the associated KMS key.
-    secret = get_secret_value_response['SecretString']
-    d = json.loads(secret)
-    api_key, api_secret = list(d.items())[0]
 
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
