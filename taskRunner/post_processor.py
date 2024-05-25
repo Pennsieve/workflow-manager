@@ -13,13 +13,15 @@ def main():
     integration_id = sys.argv[1] # pass from gateway
     api_key = sys.argv[2] # pass from gateway, differ per app?
     api_secret = sys.argv[3] # pass from gateway
-    session_token = sys.argv[4] # should get new session token now that an orchestrator calls the post processor
 
     task_definition_name = os.environ['TASK_DEFINITION_NAME_POST']
+    container_name = os.environ['CONTAINER_NAME_POST']
+    
     subnet_ids = os.environ['SUBNET_IDS']
     cluster_name = os.environ['CLUSTER_NAME']
     security_group = os.environ['SECURITY_GROUP_ID']
-    container_name = os.environ['CONTAINER_NAME_POST']
+
+    # App specific params
     pennsieve_agent_home = os.environ['PENNSIEVE_AGENT_HOME']
     pennsieve_upload_bucket = os.environ['PENNSIEVE_UPLOAD_BUCKET']
     environment = os.environ['ENVIRONMENT']

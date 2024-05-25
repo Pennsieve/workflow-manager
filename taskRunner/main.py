@@ -4,6 +4,7 @@ from boto3 import client as boto3_client
 # import modules used here -- sys is a very standard one
 import sys
 import os
+import json
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
@@ -17,6 +18,32 @@ def main():
     container_name = os.environ['CONTAINER_NAME']
     inputDir = sys.argv[1]
     outputDir = sys.argv[2]
+
+    params = ''
+    environment = [
+        {
+            'name': 'INPUT_DIR',
+            'value': inputDir
+        },
+        {
+            'name': 'OUTPUT_DIR',
+            'value': outputDir
+        },                       
+    ]
+
+    params_file = f'{inputDir}/params.json'
+    if (os.path.isfile(params_file)):
+        with open(params_file) as f:
+            params = json.load(f)
+            
+        for key, value in params.items():
+            new_param = {
+                            'name': f'{key}'.upper(),
+                            'value': value
+            }
+            environment.append(new_param)
+
+    print(environment)
 
     # start Fargate task
     if cluster_name != "":

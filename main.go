@@ -74,7 +74,6 @@ type MsgType struct {
 	IntegrationID string `json:"integrationId"`
 	ApiKey        string `json:"api_key"`
 	ApiSecret     string `json:"api_secret"`
-	SessionToken  string `json:"session_token"`
 }
 
 func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger) (bool, error) {
@@ -112,8 +111,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
 				"--integrationID", newMsg.IntegrationID,
 				"--apiKey", newMsg.ApiKey,
-				"--apiSecret", newMsg.ApiSecret,
-				"--sessionToken", newMsg.SessionToken)
+				"--apiSecret", newMsg.ApiSecret)
 			cmd.Dir = "/service"
 			var stdout strings.Builder
 			var stderr strings.Builder
