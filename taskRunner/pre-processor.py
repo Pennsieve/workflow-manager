@@ -35,8 +35,8 @@ def main():
         pennsieve_host2 = "https://api2.pennsieve.io"
     
     # APP specific
-    task_definition_name = os.environ['TASK_DEFINITION_NAME_PRE']
-    container_name = os.environ['CONTAINER_NAME_PRE']
+    task_definition_name = ""
+    container_name = ""
 
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
