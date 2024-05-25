@@ -15,6 +15,31 @@ def main():
     api_key = sys.argv[2] # pass from gateway, differ per app
     api_secret = sys.argv[3] # pass from gateway
 
+
+    # compute node / workflow manager specific
+    subnet_ids = os.environ['SUBNET_IDS']
+    cluster_name = os.environ['CLUSTER_NAME']
+    security_group = os.environ['SECURITY_GROUP_ID']
+    base_dir = os.environ['BASE_DIR']
+    env = os.environ['ENVIRONMENT']
+
+    # APP specific - params?
+    pennsieve_host = ""
+    pennsieve_host2 = ""
+
+    if env == "dev":
+        pennsieve_host = "https://api.pennsieve.net"
+        pennsieve_host2 = "https://api2.pennsieve.net"
+    else:
+        pennsieve_host = "https://api.pennsieve.io"
+        pennsieve_host2 = "https://api2.pennsieve.io"
+    
+    pennsieve_host2 = os.environ['PENNSIEVE_API_HOST2']
+
+    # APP specific
+    task_definition_name = os.environ['TASK_DEFINITION_NAME_PRE']
+    container_name = os.environ['CONTAINER_NAME_PRE']
+
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
     r.raise_for_status()
@@ -38,20 +63,7 @@ def main():
     session_token = login_response["AuthenticationResult"]["AccessToken"]
     print("session_token", session_token)
 
-    # APP specific
-    task_definition_name = os.environ['TASK_DEFINITION_NAME_PRE']
-    container_name = os.environ['CONTAINER_NAME_PRE']
-    
-    # compute node / workflow manager specific
-    subnet_ids = os.environ['SUBNET_IDS']
-    cluster_name = os.environ['CLUSTER_NAME']
-    security_group = os.environ['SECURITY_GROUP_ID']
 
-    # APP specific - params?
-    environment = os.environ['ENVIRONMENT']
-    pennsieve_host = os.environ['PENNSIEVE_API_HOST']
-    pennsieve_host2 = os.environ['PENNSIEVE_API_HOST2']
-    base_dir = os.environ['BASE_DIR']
     
     # start Fargate task
     if cluster_name != "":
@@ -104,7 +116,7 @@ def main():
 				        },
                         {
 					        'name': 'ENVIRONMENT',
-					        'value': environment
+					        'value': env
 				        },
                         {
 					        'name': 'REGION',
