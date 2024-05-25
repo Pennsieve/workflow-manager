@@ -34,8 +34,6 @@ def main():
         pennsieve_host = "https://api.pennsieve.io"
         pennsieve_host2 = "https://api2.pennsieve.io"
     
-    pennsieve_host2 = os.environ['PENNSIEVE_API_HOST2']
-
     # APP specific
     task_definition_name = os.environ['TASK_DEFINITION_NAME_PRE']
     container_name = os.environ['CONTAINER_NAME_PRE']
@@ -62,8 +60,6 @@ def main():
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
     print("session_token", session_token)
-
-
     
     # start Fargate task
     if cluster_name != "":
