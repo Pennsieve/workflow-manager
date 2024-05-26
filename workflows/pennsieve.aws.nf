@@ -10,7 +10,7 @@ log.info """\
 params.inputDir = "$BASE_DIR/input/${params.integrationID}"
 params.outputDir = "$BASE_DIR/output/${params.integrationID}"
 
-process PreProcessor {
+process InitWorkflow {
     debug true
     
     input:
@@ -22,7 +22,29 @@ process PreProcessor {
     script:
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/pre-processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+        python3.9 /service/taskRunner/init.py $ENVIRONMENT $x $y ${params.integrationID}
+        """
+    else
+        """
+        echo "running init\n"
+        echo "Running int: using input $x, and input $y"
+        """
+}
+
+process PreProcessor {
+    debug true
+    
+    input:
+        val x
+        val y
+        val z
+    output:
+        stdout
+
+    script:
+    if ("$ENVIRONMENT" != 'LOCAL')
+        """
+        python3.9 /service/taskRunner/pre_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
         """
     else
         """
@@ -78,8 +100,11 @@ process PostProcessor {
 workflow {
     input_ch = Channel.of(params.inputDir)
     output_ch = Channel.of(params.outputDir)
+    key_ch = Channel.of(params.apiKey)
+    secret_ch = Channel.of(params.apiSecret)
 
-    pre_ch = PreProcessor(input_ch, output_ch)
+    init_ch = InitWorkflow(key_ch, secret_ch)
+    pre_ch = PreProcessor(input_ch, output_ch, init_ch)
     pipeline_ch = Pipeline(pre_ch, input_ch, output_ch)
     PostProcessor(pipeline_ch, output_ch)
 }
