@@ -82,7 +82,6 @@ def main():
     )
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
-    print("pre: session_token", session_token)
 
     # APP specific - in db
     r = requests.get(f"{pennsieve_host2}/applications/{app_uuid}", headers={"Authorization": f"Bearer {session_token}"})
