@@ -4,15 +4,18 @@ from boto3 import client as boto3_client
 # import modules used here -- sys is a very standard one
 import sys
 import os
+import requests
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
     print('running task runner for integrationID', sys.argv[1])
-    integration_id = sys.argv[1] # pass from gateway
-    api_key = sys.argv[2] # pass from gateway, differ per app?
-    api_secret = sys.argv[3] # pass from gateway
+    integration_id = sys.argv[1]
+    api_key = sys.argv[2]
+    api_secret = sys.argv[3]
+    app_uuid = sys.argv[4]
+    env = os.environ['ENVIRONMENT']
 
     task_definition_name = os.environ['TASK_DEFINITION_NAME_POST']
     container_name = os.environ['CONTAINER_NAME_POST']
@@ -23,10 +26,53 @@ def main():
 
     # App specific params
     pennsieve_agent_home = os.environ['PENNSIEVE_AGENT_HOME']
-    pennsieve_upload_bucket = os.environ['PENNSIEVE_UPLOAD_BUCKET']
-    environment = os.environ['ENVIRONMENT']
-    pennsieve_host = os.environ['PENNSIEVE_API_HOST']
-    pennsieve_host2 = os.environ['PENNSIEVE_API_HOST2']
+    pennsieve_upload_bucket = os.environ['PENNSIEVE_UPLOAD_BUCKET'] # environment dependent
+
+    pennsieve_host = ""
+    pennsieve_host2 = ""
+    pennsieve_agent_home = ""
+    pennsieve_upload_bucket = ""
+    pennsieve_agent_home = "/tmp"
+
+    if env == "dev":
+        pennsieve_host = "https://api.pennsieve.net"
+        pennsieve_host2 = "https://api2.pennsieve.net"
+        pennsieve_upload_bucket = "pennsieve-dev-uploads-v2-use1"
+    else:
+        pennsieve_host = "https://api.pennsieve.io"
+        pennsieve_host2 = "https://api2.pennsieve.io"
+
+
+    # get session_token
+    r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
+    r.raise_for_status()
+
+    cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
+    cognito_region = r.json()["region"]
+
+    cognito_idp_client = boto3_client(
+    "cognito-idp",
+    region_name=cognito_region,
+    aws_access_key_id="",
+    aws_secret_access_key="",
+    )
+            
+    login_response = cognito_idp_client.initiate_auth(
+    AuthFlow="USER_PASSWORD_AUTH",
+    AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
+    ClientId=cognito_app_client_id,
+    )
+
+    session_token = login_response["AuthenticationResult"]["AccessToken"]
+    print("pre: session_token", session_token)
+
+    # APP specific - in db
+    r = requests.get(f"{pennsieve_host2}/applications/{app_uuid}", headers={"Authorization": f"Bearer {session_token}"})
+    r.raise_for_status()
+    print(r.json())
+    
+    task_definition_name = r.json()["applicationId"]
+    container_name = r.json()["applicationContainerName"]
 
     # start Fargate task
     if cluster_name != "":
@@ -83,7 +129,7 @@ def main():
 				        },
                         {
 					        'name': 'ENVIRONMENT',
-					        'value': environment
+					        'value': env
 				        },
                         {
 					        'name': 'REGION',

@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 from boto3 import client as boto3_client
-from boto3 import session as boto3_session
 import sys
 import os
 import requests
@@ -11,10 +10,10 @@ ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 # Gather our code in a main() function
 def main():
     print('running task runner for integrationID', sys.argv[1])
-    integration_id = sys.argv[1] # pass from gateway
-    api_key = sys.argv[2] # pass from gateway, differ per app
-    api_secret = sys.argv[3] # pass from gateway
-
+    integration_id = sys.argv[1]
+    api_key = sys.argv[2]
+    api_secret = sys.argv[3]
+    app_uuid = sys.argv[4]
 
     # compute node / workflow manager specific
     subnet_ids = os.environ['SUBNET_IDS']
@@ -23,7 +22,7 @@ def main():
     base_dir = os.environ['BASE_DIR']
     env = os.environ['ENVIRONMENT']
 
-    # APP specific - params?
+    # App specific - params? - defaults on app creation, then overriden on run
     pennsieve_host = ""
     pennsieve_host2 = ""
 
@@ -33,10 +32,6 @@ def main():
     else:
         pennsieve_host = "https://api.pennsieve.io"
         pennsieve_host2 = "https://api2.pennsieve.io"
-    
-    # APP specific
-    task_definition_name = ""
-    container_name = ""
 
     # get session_token
     r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
@@ -59,7 +54,15 @@ def main():
     )
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
-    print("session_token", session_token)
+    print("pre: session_token", session_token)
+
+    # APP specific - in db
+    r = requests.get(f"{pennsieve_host2}/applications/{app_uuid}", headers={"Authorization": f"Bearer {session_token}"})
+    r.raise_for_status()
+    print(r.json())
+    
+    task_definition_name = r.json()["applicationId"]
+    container_name = r.json()["applicationContainerName"]
     
     # start Fargate task
     if cluster_name != "":

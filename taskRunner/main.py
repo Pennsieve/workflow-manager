@@ -5,6 +5,7 @@ from boto3 import client as boto3_client
 import sys
 import os
 import json
+import requests
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
@@ -18,8 +19,12 @@ def main():
     container_name = os.environ['CONTAINER_NAME']
     inputDir = sys.argv[1]
     outputDir = sys.argv[2]
+    app_uuid = sys.argv[3]
+    api_key = sys.argv[4]
+    api_secret = sys.argv[5]
 
-    params = ''
+    env = os.environ['ENVIRONMENT']
+
     environment = [
         {
             'name': 'INPUT_DIR',
@@ -31,19 +36,61 @@ def main():
         },                       
     ]
 
-    params_file = f'{inputDir}/params.json'
-    if (os.path.isfile(params_file)):
-        with open(params_file) as f:
-            params = json.load(f)
+    # params_file = f'{inputDir}/params.json'
+    # if (os.path.isfile(params_file)):
+    #     with open(params_file) as f:
+    #         params = json.load(f)
             
-        for key, value in params.items():
-            new_param = {
-                            'name': f'{key}'.upper(),
-                            'value': value
-            }
-            environment.append(new_param)
+    #     for key, value in params.items():
+    #         new_param = {
+    #                         'name': f'{key}'.upper(),
+    #                         'value': value
+    #         }
+    #         environment.append(new_param)
 
-    print(environment)
+    # print(environment)
+
+    # App specific - params? - defaults on app creation, then overriden on run
+    pennsieve_host = ""
+    pennsieve_host2 = ""
+
+    if env == "dev":
+        pennsieve_host = "https://api.pennsieve.net"
+        pennsieve_host2 = "https://api2.pennsieve.net"
+    else:
+        pennsieve_host = "https://api.pennsieve.io"
+        pennsieve_host2 = "https://api2.pennsieve.io"
+
+    # get session_token
+    r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
+    r.raise_for_status()
+
+    cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
+    cognito_region = r.json()["region"]
+
+    cognito_idp_client = boto3_client(
+    "cognito-idp",
+    region_name=cognito_region,
+    aws_access_key_id="",
+    aws_secret_access_key="",
+    )
+            
+    login_response = cognito_idp_client.initiate_auth(
+    AuthFlow="USER_PASSWORD_AUTH",
+    AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
+    ClientId=cognito_app_client_id,
+    )
+
+    session_token = login_response["AuthenticationResult"]["AccessToken"]
+    print("pre: session_token", session_token)
+
+    # APP specific - in db
+    r = requests.get(f"{pennsieve_host2}/applications/{app_uuid}", headers={"Authorization": f"Bearer {session_token}"})
+    r.raise_for_status()
+    print(r.json())
+    
+    task_definition_name = r.json()["applicationId"]
+    container_name = r.json()["applicationContainerName"]
 
     # start Fargate task
     if cluster_name != "":
@@ -65,17 +112,7 @@ def main():
 	        'containerOverrides': [
 		        {
 		            'name': container_name,
-			        'environment': [
-                        {
-					        'name': 'INPUT_DIR',
-					        'value': inputDir
-				        },
-                        {
-					        'name': 'OUTPUT_DIR',
-					        'value': outputDir
-				        },             
-                        
-			     ],
+			        'environment': environment,
 		        },
 	        ],
         })
