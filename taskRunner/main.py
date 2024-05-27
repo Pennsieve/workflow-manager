@@ -11,12 +11,9 @@ ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
-
-    task_definition_name = os.environ['TASK_DEFINITION_NAME']
     subnet_ids = os.environ['SUBNET_IDS']
     cluster_name = os.environ['CLUSTER_NAME']
     security_group = os.environ['SECURITY_GROUP_ID']
-    container_name = os.environ['CONTAINER_NAME']
     inputDir = sys.argv[1]
     outputDir = sys.argv[2]
     app_uuid = sys.argv[3]

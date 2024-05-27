@@ -16,9 +16,6 @@ def main():
     api_secret = sys.argv[3]
     app_uuid = sys.argv[4]
     env = os.environ['ENVIRONMENT']
-
-    task_definition_name = os.environ['TASK_DEFINITION_NAME_POST']
-    container_name = os.environ['CONTAINER_NAME_POST']
     
     subnet_ids = os.environ['SUBNET_IDS']
     cluster_name = os.environ['CLUSTER_NAME']
