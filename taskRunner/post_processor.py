@@ -21,10 +21,6 @@ def main():
     cluster_name = os.environ['CLUSTER_NAME']
     security_group = os.environ['SECURITY_GROUP_ID']
 
-    # App specific params
-    pennsieve_agent_home = os.environ['PENNSIEVE_AGENT_HOME']
-    pennsieve_upload_bucket = os.environ['PENNSIEVE_UPLOAD_BUCKET'] # environment dependent
-
     pennsieve_host = ""
     pennsieve_host2 = ""
     pennsieve_agent_home = ""
