@@ -25,11 +25,11 @@ process InitWorkflow {
     script:
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        echo 'cbc01408-e39b-4238-a127-0ed6d36f2e6a,37fd4524-1efc-42a1-a81a-0f82f0467c23,1845c2c6-b60c-49a6-893f-1761033f5987'
+        python3.9 /service/taskRunner/init_local.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
         """
     else
         """
-        echo 'preprocessor123,processor123,postprocessor123'
+        python3.9 /service/taskRunner/init_local.py
         """
 }
 
@@ -44,16 +44,14 @@ process PreProcessor {
         stdout
 
     script:
-    workflow = w.split(',') as List
-    app_uuid = workflow[0]
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/pre_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} ${app_uuid}
+        python3.9 /service/taskRunner/pre_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$w'
         """
     else
         """
-        echo "running pre-processor\n"
-        echo "Running pre-processor: using input $x, and output $y, and ${app_uuid}"
+        echo "running local pre-processor\n"
+        python3.9 /service/taskRunner/pre_processor_local.py '$w'
         """
 }
 
@@ -68,11 +66,9 @@ process Pipeline {
     output: stdout
 
     script:
-    workflow = w.split(',') as List
-    app_uuid = workflow[1]
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/main.py $inputDir $outputDir ${app_uuid} ${params.apiKey} ${params.apiSecret}
+        python3.9 /service/taskRunner/main.py $inputDir $outputDir '$w'
         """
     else
         """
@@ -80,7 +76,7 @@ process Pipeline {
         echo "pre-output is: $pre_output"
         echo "inputDir is: $inputDir"
         echo "outputDir is: $outputDir"
-        echo "processor is: $app_uuid"
+        echo '$w'
         """
 }
 
@@ -94,18 +90,15 @@ process PostProcessor {
     output: stdout
 
     script:
-        workflow = w.split(',') as List
-        app_uuid = workflow[2]
         if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/post_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} ${app_uuid}
+        python3.9 /service/taskRunner/post_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$w'
         """
     else
         """
         echo "running post-processor\n"
         echo "pipeline_output is: $pipeline_output"
         echo "outputDir is: $outputDir"
-        echo "processor is: $app_uuid"
         """
 }
 

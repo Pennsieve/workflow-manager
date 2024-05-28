@@ -4,14 +4,14 @@ import sys
 import requests
 import json
 from boto3 import client as boto3_client
+import os
 
 # Gather our code in a main() function
 def main():
-    print("hello there")
-    env = sys.argv[1]
+    env = os.environ['ENVIRONMENT']
+    integrationId = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3] 
-    integrationId = sys.argv[4]
 
     pennsieve_host = ""
     pennsieve_host2 = ""
@@ -44,11 +44,10 @@ def main():
     )
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
-    print("init: session_token", session_token)
     
     r = requests.get(f"{pennsieve_host2}/integrations/{integrationId}", headers={"Authorization": f"Bearer {session_token}"})
     r.raise_for_status()
-    print(r.json()) # return workflow
+    print(r.json()["workflow"])
 
 # Standard boilerplate to call the main() function to begin
 # the program.

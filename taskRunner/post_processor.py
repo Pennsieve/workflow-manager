@@ -5,6 +5,7 @@ from boto3 import client as boto3_client
 import sys
 import os
 import requests
+import json
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
@@ -14,7 +15,7 @@ def main():
     integration_id = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
-    app_uuid = sys.argv[4]
+    workflow = json.loads(sys.argv[4])
     env = os.environ['ENVIRONMENT']
     
     subnet_ids = os.environ['SUBNET_IDS']
@@ -58,13 +59,12 @@ def main():
 
     session_token = login_response["AuthenticationResult"]["AccessToken"]
 
-    # APP specific - in db
-    r = requests.get(f"{pennsieve_host2}/applications/{app_uuid}", headers={"Authorization": f"Bearer {session_token}"})
-    r.raise_for_status()
-    print(r.json())
-    
-    task_definition_name = r.json()["applicationId"]
-    container_name = r.json()["applicationContainerName"]
+    container_name = ""
+    task_definition_name = ""
+    for app in workflow:
+        if app['applicationType'] == 'postprocessor':
+            container_name = app['applicationContainerName']
+            task_definition_name = app['applicationId']
 
     # start Fargate task
     if cluster_name != "":
