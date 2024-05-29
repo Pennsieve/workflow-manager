@@ -82,9 +82,13 @@ def main():
         waiter.wait(
             cluster=cluster_name,
             tasks=[task_arn],
+            WaiterConfig={
+                'Delay': 30,
+                'MaxAttempts': 300
+            }
         )
 
-        print("Fargate Task has stopped" + task_definition_name)
+        print("Fargate Task has stopped: " + task_definition_name)
 
 
 # Standard boilerplate to call the main() function to begin
