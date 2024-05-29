@@ -25,7 +25,7 @@ process InitWorkflow {
     script:
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/init_local.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+        python3.9 /service/taskRunner/init.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
         """
     else
         """
