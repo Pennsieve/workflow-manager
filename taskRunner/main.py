@@ -49,8 +49,12 @@ def main():
 
     # print(environment)
     
-    task_definition_name = r.json()["applicationId"]
-    container_name = r.json()["applicationContainerName"]
+    container_name = ""
+    task_definition_name = ""
+    for app in workflow:
+        if app['applicationType'] == 'processor':
+            container_name = app['applicationContainerName']
+            task_definition_name = app['applicationId']
 
     # start Fargate task
     if cluster_name != "":
