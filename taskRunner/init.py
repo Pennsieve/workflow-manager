@@ -47,7 +47,7 @@ def main():
     
     r = requests.get(f"{pennsieve_host2}/integrations/{integrationId}", headers={"Authorization": f"Bearer {session_token}"})
     r.raise_for_status()
-    print(r.json()["workflow"])
+    print(json.dumps(r.json()["workflow"]))
 
 # Standard boilerplate to call the main() function to begin
 # the program.
