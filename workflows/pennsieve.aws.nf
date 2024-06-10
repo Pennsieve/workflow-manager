@@ -33,6 +33,28 @@ process InitWorkflow {
         """
 }
 
+process MultiStageWorkflow {
+    debug true
+    
+    input:
+        val inputDir
+        val outputDir
+        val wf
+    output:
+        stdout
+
+    script:
+    if ("$ENVIRONMENT" != 'LOCAL')
+        """
+        python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir
+        """
+    else
+        """
+        echo "running local multi-stage-processor\n"
+        python3.9 /service/taskRunner/multi_stage_local.py '$wf'
+        """
+}
+
 process PreProcessor {
     debug true
     
@@ -109,9 +131,7 @@ workflow {
     secret_ch = Channel.of(params.apiSecret)
 
     init_ch = InitWorkflow(key_ch, secret_ch)
-    pre_ch = PreProcessor(input_ch, output_ch, init_ch)
-    pipeline_ch = Pipeline(pre_ch, input_ch, output_ch, init_ch)
-    PostProcessor(pipeline_ch, output_ch, init_ch)
+    MultiStageWorkflow(input_ch, output_ch, init_ch)
 }
 
 workflow.onComplete {

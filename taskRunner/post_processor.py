@@ -24,7 +24,6 @@ def main():
 
     pennsieve_host = ""
     pennsieve_host2 = ""
-    pennsieve_agent_home = ""
     pennsieve_upload_bucket = ""
     pennsieve_agent_home = "/tmp"
 
