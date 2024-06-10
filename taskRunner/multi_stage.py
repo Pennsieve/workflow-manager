@@ -133,7 +133,7 @@ def main():
                                 'name': 'OUTPUT_DIR',
                                 'value': outputDir
                             },
-                                                    {
+                            {
 					            'name': 'PENNSIEVE_AGENT_HOME',
 					            'value': pennsieve_agent_home
 				            },
