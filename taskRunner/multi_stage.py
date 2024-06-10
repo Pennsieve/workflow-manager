@@ -134,13 +134,13 @@ def main():
                                 'value': outputDir
                             },
                             {
-					            'name': 'PENNSIEVE_AGENT_HOME',
-					            'value': pennsieve_agent_home
-				            },
+                                'name': 'PENNSIEVE_AGENT_HOME',
+                                'value': pennsieve_agent_home
+                            },
                             {
-					            'name': 'PENNSIEVE_UPLOAD_BUCKET',
-					            'value': pennsieve_upload_bucket
-				            }, 
+                                'name': 'PENNSIEVE_UPLOAD_BUCKET',
+                                'value': pennsieve_upload_bucket
+                            }, 
                     ],
                     },
                 ],
