@@ -67,28 +67,9 @@ def main():
     for app in workflow:
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
-    
-        # start Fargate task
-        if cluster_name != "":
-            print("Starting Fargate task")
-            response = ecs_client.run_task(
-                cluster = cluster_name,
-                launchType = 'FARGATE',
-                taskDefinition=task_definition_name,
-                count = 1,
-                platformVersion='LATEST',
-                networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': subnet_ids.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [security_group]
-                    }   
-                },
-                overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': [
+        application_params = app['params']
+
+        environment = [
                             {
                                 'name': 'INTEGRATION_ID',
                                 'value': integration_id
@@ -141,7 +122,38 @@ def main():
                                 'name': 'PENNSIEVE_UPLOAD_BUCKET',
                                 'value': pennsieve_upload_bucket
                             }, 
-                    ],
+        ]
+                
+        for key, value in application_params.items():
+            new_param = {
+                            'name': f'{key}'.upper(),
+                            'value': value
+            }
+            environment.append(new_param)
+
+        print(environment)
+    
+        # start Fargate task
+        if cluster_name != "":
+            print("Starting Fargate task")
+            response = ecs_client.run_task(
+                cluster = cluster_name,
+                launchType = 'FARGATE',
+                taskDefinition=task_definition_name,
+                count = 1,
+                platformVersion='LATEST',
+                networkConfiguration={
+                'awsvpcConfiguration': {
+                    'subnets': subnet_ids.split(","),
+                    'assignPublicIp': 'ENABLED',
+                    'securityGroups': [security_group]
+                    }   
+                },
+                overrides={
+                'containerOverrides': [
+                    {
+                        'name': container_name,
+                        'environment': environment,
                     },
                 ],
             })
