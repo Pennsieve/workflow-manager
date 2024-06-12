@@ -70,59 +70,61 @@ def main():
         application_params = app['params']
 
         environment = [
-                            {
-                                'name': 'INTEGRATION_ID',
-                                'value': integration_id
-                            },
-                            {
-                                'name': 'PENNSIEVE_API_KEY',
-                                'value': api_key
-                            },
-                            {
-                                'name': 'PENNSIEVE_API_SECRET',
-                                'value': api_secret
-                            },
-                            {
-                                'name': 'BASE_DIR',
-                                'value': base_dir
-                            },
-                            {
-                                'name': 'PENNSIEVE_API_HOST',
-                                'value': pennsieve_host
-                            },
-                                                    {
-                                'name': 'PENNSIEVE_API_HOST2',
-                                'value': pennsieve_host2
-                            },
-                            {
-                                'name': 'SESSION_TOKEN',
-                                'value': session_token
-                            },
-                            {
-                                'name': 'ENVIRONMENT',
-                                'value': env
-                            },
-                            {
-                                'name': 'REGION',
-                                'value': os.environ['REGION']
-                            },
-                            {
-                                'name': 'INPUT_DIR',
-                                'value': inputDir
-                            },
-                            {
-                                'name': 'OUTPUT_DIR',
-                                'value': outputDir
-                            },
-                            {
-                                'name': 'PENNSIEVE_AGENT_HOME',
-                                'value': pennsieve_agent_home
-                            },
-                            {
-                                'name': 'PENNSIEVE_UPLOAD_BUCKET',
-                                'value': pennsieve_upload_bucket
-                            }, 
+            {
+                'name': 'INTEGRATION_ID',
+                'value': integration_id
+            },
+            {
+                'name': 'PENNSIEVE_API_KEY',
+                'value': api_key
+            },
+            {
+                'name': 'PENNSIEVE_API_SECRET',
+                'value': api_secret
+            },
+            {
+                'name': 'BASE_DIR',
+                'value': base_dir
+            },
+            {
+                'name': 'PENNSIEVE_API_HOST',
+                'value': pennsieve_host
+            },
+                                    {
+                'name': 'PENNSIEVE_API_HOST2',
+                'value': pennsieve_host2
+            },
+            {
+                'name': 'SESSION_TOKEN',
+                'value': session_token
+            },
+            {
+                'name': 'ENVIRONMENT',
+                'value': env
+            },
+            {
+                'name': 'REGION',
+                'value': os.environ['REGION']
+            },
+            {
+                'name': 'INPUT_DIR',
+                'value': inputDir
+            },
+            {
+                'name': 'OUTPUT_DIR',
+                'value': outputDir
+            },
+            {
+                'name': 'PENNSIEVE_AGENT_HOME',
+                'value': pennsieve_agent_home
+            },
+            {
+                'name': 'PENNSIEVE_UPLOAD_BUCKET',
+                'value': pennsieve_upload_bucket
+            }, 
         ]
+
+        command = []
                 
         for key, value in application_params.items():
             new_param = {
@@ -154,6 +156,7 @@ def main():
                     {
                         'name': container_name,
                         'environment': environment,
+                        'command': command,
                     },
                 ],
             })
