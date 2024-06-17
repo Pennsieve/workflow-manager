@@ -33,72 +33,25 @@ process InitWorkflow {
         """
 }
 
-process PreProcessor {
+process MultiStageWorkflow {
     debug true
     
     input:
-        val x
-        val y
-        val w
+        val inputDir
+        val outputDir
+        val wf
     output:
         stdout
 
     script:
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/pre_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$w'
+        python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir
         """
     else
         """
-        echo "running local pre-processor\n"
-        python3.9 /service/taskRunner/pre_processor_local.py '$w'
-        """
-}
-
-process Pipeline {
-    debug true
-    
-    input:
-        val pre_output
-        val inputDir
-        val outputDir
-        val w
-    output: stdout
-
-    script:
-    if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/main.py $inputDir $outputDir '$w'
-        """
-    else
-        """
-        echo "running pipeline\n"
-        echo "pre-output is: $pre_output"
-        echo "inputDir is: $inputDir"
-        echo "outputDir is: $outputDir"
-        echo '$w'
-        """
-}
-
-process PostProcessor {
-    debug true
-
-    input:
-        val pipeline_output
-        val outputDir
-        val w
-    output: stdout
-
-    script:
-        if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/post_processor.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$w'
-        """
-    else
-        """
-        echo "running post-processor\n"
-        echo "pipeline_output is: $pipeline_output"
-        echo "outputDir is: $outputDir"
+        echo "running local multi-stage-processor\n"
+        python3.9 /service/taskRunner/multi_stage_local.py '$wf'
         """
 }
 
@@ -109,9 +62,7 @@ workflow {
     secret_ch = Channel.of(params.apiSecret)
 
     init_ch = InitWorkflow(key_ch, secret_ch)
-    pre_ch = PreProcessor(input_ch, output_ch, init_ch)
-    pipeline_ch = Pipeline(pre_ch, input_ch, output_ch, init_ch)
-    PostProcessor(pipeline_ch, output_ch, init_ch)
+    MultiStageWorkflow(input_ch, output_ch, init_ch)
 }
 
 workflow.onComplete {

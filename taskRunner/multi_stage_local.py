@@ -7,13 +7,13 @@ import json
 # Gather our code in a main() function
 def main():
     workflow=json.loads(sys.argv[1])
+    # print(workflow)
     container_name = ""
     task_definition_name = ""
     for app in workflow:
-        if app['applicationType'] == 'preprocessor':
             container_name = app['applicationContainerName']
             task_definition_name = app['applicationId']
-    print(container_name, task_definition_name)     
+            print(container_name, task_definition_name)     
 
 
     
