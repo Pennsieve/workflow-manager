@@ -121,19 +121,21 @@ def main():
                 'value': pennsieve_upload_bucket
             }, 
         ]
-
-        command = []
                 
         if 'params' in app:
             application_params = app['params']        
             for key, value in application_params.items():
                 new_param = {
                                 'name': f'{key}'.upper(),
-                                'value': value
+                                'value': f'{value}'
                 }
                 environment.append(new_param)
 
             print(environment) 
+
+        command = []
+        if 'commandArguments' in app:
+            command = app['commandArguments']
     
         # start Fargate task
         if cluster_name != "":
