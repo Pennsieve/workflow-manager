@@ -11,9 +11,30 @@ def main():
     container_name = ""
     task_definition_name = ""
     for app in workflow:
-            container_name = app['applicationContainerName']
-            task_definition_name = app['applicationId']
-            print(container_name, task_definition_name)     
+        container_name = app['applicationContainerName']
+        task_definition_name = app['applicationId']
+        
+        print(container_name, task_definition_name)
+
+        environment = [
+        {
+            'name': 'INTEGRATION_ID',
+            'value': "some_id"
+        }, 
+        ]
+
+        # command = []
+
+        if 'params' in app:
+            application_params = app['params']        
+            for key, value in application_params.items():
+                new_param = {
+                                'name': f'{key}'.upper(),
+                                'value': value
+                }
+                environment.append(new_param)
+
+            print(environment)   
 
 
     

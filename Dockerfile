@@ -10,7 +10,6 @@ RUN apt-get -y install temurin-17-jdk
 
 # install nextflow
 RUN wget -qO- https://get.nextflow.io | bash && chmod +x nextflow && cp ./nextflow /usr/local
-RUN apt-get -y install graphviz
 
 ENV PATH="${PATH}:/usr/local/"
 
@@ -34,7 +33,6 @@ RUN ls /service/taskRunner
 RUN go build -o /service/main main.go
 
 RUN mkdir -p workflows
-
 
 RUN apt-get -y install python3-pip
 RUN pip install -r /service/taskRunner/requirements.txt

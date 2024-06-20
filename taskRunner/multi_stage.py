@@ -40,34 +40,32 @@ def main():
         pennsieve_host = "https://api.pennsieve.io"
         pennsieve_host2 = "https://api2.pennsieve.io"
 
-    # get session_token
-    r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
-    r.raise_for_status()
-
-    cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
-    cognito_region = r.json()["region"]
-
-    cognito_idp_client = boto3_client(
-    "cognito-idp",
-    region_name=cognito_region,
-    aws_access_key_id="",
-    aws_secret_access_key="",
-    )
-            
-    login_response = cognito_idp_client.initiate_auth(
-    AuthFlow="USER_PASSWORD_AUTH",
-    AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
-    ClientId=cognito_app_client_id,
-    )
-
-    session_token = login_response["AuthenticationResult"]["AccessToken"]
-
     container_name = ""
     task_definition_name = ""
     for app in workflow:
+        # get session_token
+        r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
+        r.raise_for_status()
+
+        cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
+        cognito_region = r.json()["region"]
+
+        cognito_idp_client = boto3_client(
+        "cognito-idp",
+        region_name=cognito_region,
+        aws_access_key_id="",
+        aws_secret_access_key="",
+        )
+                
+        login_response = cognito_idp_client.initiate_auth(
+        AuthFlow="USER_PASSWORD_AUTH",
+        AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
+        ClientId=cognito_app_client_id,
+        )
+        session_token = login_response["AuthenticationResult"]["AccessToken"]
+
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
-        application_params = app['params']
 
         environment = [
             {
@@ -123,17 +121,21 @@ def main():
                 'value': pennsieve_upload_bucket
             }, 
         ]
+                
+        if 'params' in app:
+            application_params = app['params']        
+            for key, value in application_params.items():
+                new_param = {
+                                'name': f'{key}'.upper(),
+                                'value': f'{value}'
+                }
+                environment.append(new_param)
+
+            print(environment) 
 
         command = []
-                
-        for key, value in application_params.items():
-            new_param = {
-                            'name': f'{key}'.upper(),
-                            'value': value
-            }
-            environment.append(new_param)
-
-        print(environment)
+        if 'commandArguments' in app:
+            command = app['commandArguments']
     
         # start Fargate task
         if cluster_name != "":
