@@ -176,7 +176,6 @@ def main():
 
             print("Fargate Task has stopped: " + task_definition_name)
 
-
 # Standard boilerplate to call the main() function to begin
 # the program.
 if __name__ == '__main__':

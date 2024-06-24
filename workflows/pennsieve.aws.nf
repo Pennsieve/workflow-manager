@@ -61,8 +61,8 @@ workflow {
     key_ch = Channel.of(params.apiKey)
     secret_ch = Channel.of(params.apiSecret)
 
-    init_ch = InitWorkflow(key_ch, secret_ch)
-    MultiStageWorkflow(input_ch, output_ch, init_ch)
+    wf_ch = InitWorkflow(key_ch, secret_ch)
+    MultiStageWorkflow(input_ch, output_ch, wf_ch)
 }
 
 workflow.onComplete {
