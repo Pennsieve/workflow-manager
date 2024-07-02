@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	visibilityTimeout = 360 * 10
+	visibilityTimeout = 2880 * 10
 	waitingTimeout    = 20
 )
 
