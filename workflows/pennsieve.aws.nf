@@ -55,16 +55,49 @@ process MultiStageWorkflow {
         """
 }
 
+process CleanupWorkflow {
+    debug true
+    
+    input:
+        val multiStageOutput
+        val inputDir
+        val outputDir
+
+    output:
+        stdout
+
+    script:
+    if ("$ENVIRONMENT" != 'LOCAL')
+        """
+        python3.9 /service/taskRunner/cleanup.py '$multiStageOutput' $inputDir $outputDir
+        """
+    else
+        """
+        echo "running local cleanup\n"
+        python3.9 /service/taskRunner/cleanup_local.py '$multiStageOutput' $inputDir $outputDir
+        """
+}
+
 workflow {
     input_ch = Channel.of(params.inputDir)
     output_ch = Channel.of(params.outputDir)
     key_ch = Channel.of(params.apiKey)
     secret_ch = Channel.of(params.apiSecret)
 
-    init_ch = InitWorkflow(key_ch, secret_ch)
-    MultiStageWorkflow(input_ch, output_ch, init_ch)
+    wf_ch = InitWorkflow(key_ch, secret_ch)
+    ms_ch = MultiStageWorkflow(input_ch, output_ch, wf_ch)
+    CleanupWorkflow(ms_ch, input_ch, output_ch)
 }
 
 workflow.onComplete {
-    log.info ( workflow.success ? "\nDone!" : "Oops .. something went wrong" )
+    log.info ( workflow.success ? "\nDone!" : "Oops .. something went wrong: ${workflow.errorMessage}" )
+
+    println "--------------------------"
+    println "Pipeline execution summary"
+    println "--------------------------"
+    println "Started at  : ${workflow.start}"
+    println "Completed at: ${workflow.complete}"
+    println "Duration    : ${workflow.duration}"
+    println "Success     : ${workflow.success}"
+    println "WorkDir     : ${workflow.workDir}"
 }

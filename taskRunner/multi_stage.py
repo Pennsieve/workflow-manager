@@ -170,12 +170,11 @@ def main():
                 tasks=[task_arn],
                 WaiterConfig={
                     'Delay': 30,
-                    'MaxAttempts': 300
+                    'MaxAttempts': 1000
                 }
             )
 
             print("Fargate Task has stopped: " + task_definition_name)
-
 
 # Standard boilerplate to call the main() function to begin
 # the program.
