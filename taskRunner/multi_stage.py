@@ -170,7 +170,7 @@ def main():
                 tasks=[task_arn],
                 WaiterConfig={
                     'Delay': 30,
-                    'MaxAttempts': 1000
+                    'MaxAttempts': 2000
                 }
             )
 
