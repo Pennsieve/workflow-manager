@@ -29,7 +29,29 @@ func main() {
 	slog.SetDefault(logger)
 
 	logger.Info("Welcome to the WorkflowManager")
-	logger.Info("Starting pipeline")
+
+	baseDir := os.Getenv("BASE_DIR")
+	if baseDir == "" {
+		baseDir = "/mnt/efs"
+	}
+
+	// create output directory and set permissions
+	err := os.Chdir(baseDir)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
+	err = os.MkdirAll("output", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("output", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -107,9 +129,46 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
 
 		go func(msg types.Message) {
+			logger.Info("Initializing workspace ...")
+
+			integrationID := newMsg.IntegrationID
+			baseDir := os.Getenv("BASE_DIR")
+			if baseDir == "" {
+				baseDir = "/mnt/efs"
+			}
+
+			// create workspace sub-directories
+			err := os.Chdir(baseDir)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+
+			// inputDir
+			inputDir := fmt.Sprintf("%s/input/%s", baseDir, integrationID)
+			err = os.MkdirAll(inputDir, 0755)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+
+			// outputDir
+			outputDir := fmt.Sprintf("%s/output/%s", baseDir, integrationID)
+			err = os.MkdirAll(outputDir, 0777)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+			err = os.Chown(outputDir, 1000, 1000)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+
 			// run pipeline
+			logger.Info("Starting pipeline")
 			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
-				"--integrationID", newMsg.IntegrationID,
+				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret)
 			cmd.Dir = "/service"
