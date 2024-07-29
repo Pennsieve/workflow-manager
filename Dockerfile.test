@@ -10,7 +10,6 @@ RUN apt-get -y install temurin-17-jdk
 
 # install nextflow
 RUN wget -qO- https://get.nextflow.io | bash && chmod +x nextflow && cp ./nextflow /usr/local
-RUN apt-get -y install graphviz
 
 ENV PATH="${PATH}:/usr/local/"
 

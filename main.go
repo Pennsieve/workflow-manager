@@ -159,6 +159,14 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error())
 				os.Exit(1)
 			}
+
+			// creates log directory
+			outputLogDir := fmt.Sprintf("%s/output/%s/logs", baseDir, integrationID)
+			err = os.MkdirAll(outputLogDir, 0777)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
 			err = os.Chown(outputDir, 1000, 1000)
 			if err != nil {
 				logger.Error(err.Error())
@@ -168,6 +176,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			// run pipeline
 			logger.Info("Starting pipeline")
 			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"-w", outputLogDir,
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret)
