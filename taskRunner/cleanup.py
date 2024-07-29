@@ -2,12 +2,10 @@
 
 import shutil
 import sys
-import time
 
 # Gather our code in a main() function
 def main():
     print("cleaning up ...")
-    time.sleep(10)
     inputDir = sys.argv[2]
     outputDir = sys.argv[3]
 
