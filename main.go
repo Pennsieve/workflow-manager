@@ -53,6 +53,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = os.MkdirAll("workspace", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("workspace", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
@@ -160,14 +171,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				os.Exit(1)
 			}
 
-			// creates log directory
-			outputLogDir := fmt.Sprintf("%s/output/%s/workspace", baseDir, integrationID)
-			err = os.MkdirAll(outputLogDir, 0777)
-			if err != nil {
-				logger.Error(err.Error())
-				os.Exit(1)
-			}
-			err = os.Chown(outputDir, 1000, 1000)
+			// workspaceDir
+			workspaceDir := fmt.Sprintf("%s/workspace/%s", baseDir, integrationID)
+			err = os.MkdirAll(outputDir, 0777)
 			if err != nil {
 				logger.Error(err.Error())
 				os.Exit(1)
@@ -175,8 +181,10 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// run pipeline
 			logger.Info("Starting pipeline")
-			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
-				"-w", outputLogDir,
+			cmd := exec.Command("nextflow",
+				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
+				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"-w", workspaceDir,
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret)
