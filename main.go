@@ -213,6 +213,20 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout2.String())
 
+			// list ecs logs
+			logger.Info("Listing ecs logs")
+			cmd3 := exec.Command("ls", "-alhR", "/var/log/ecs")
+			cmd3.Dir = "/service"
+			var stdout3 strings.Builder
+			var stderr3 strings.Builder
+			cmd2.Stdout = &stdout3
+			cmd2.Stderr = &stderr3
+			if err := cmd3.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr3.String()))
+			}
+			fmt.Println(stdout3.String())
+
 			// cleanup files
 			err = os.RemoveAll(inputDir)
 			if err != nil {
