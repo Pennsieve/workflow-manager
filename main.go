@@ -227,6 +227,20 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout3.String())
 
+			// list ecs logs
+			logger.Info("contents of nextflow.log")
+			cmd4 := exec.Command("cat", fmt.Sprintf("%s/nextflow.log", workspaceDir))
+			cmd4.Dir = "/service"
+			var stdout4 strings.Builder
+			var stderr4 strings.Builder
+			cmd2.Stdout = &stdout4
+			cmd2.Stderr = &stderr4
+			if err := cmd4.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr4.String()))
+			}
+			fmt.Println(stdout4.String())
+
 			// cleanup files
 			err = os.RemoveAll(inputDir)
 			if err != nil {
