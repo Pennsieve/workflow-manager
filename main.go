@@ -219,22 +219,22 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			cmd3.Dir = "/service"
 			var stdout3 strings.Builder
 			var stderr3 strings.Builder
-			cmd2.Stdout = &stdout3
-			cmd2.Stderr = &stderr3
+			cmd3.Stdout = &stdout3
+			cmd3.Stderr = &stderr3
 			if err := cmd3.Run(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr3.String()))
 			}
 			fmt.Println(stdout3.String())
 
-			// list ecs logs
+			// list nextflow log contents
 			logger.Info("contents of nextflow.log")
 			cmd4 := exec.Command("cat", fmt.Sprintf("%s/nextflow.log", workspaceDir))
 			cmd4.Dir = "/service"
 			var stdout4 strings.Builder
 			var stderr4 strings.Builder
-			cmd2.Stdout = &stdout4
-			cmd2.Stderr = &stderr4
+			cmd4.Stdout = &stdout4
+			cmd4.Stderr = &stderr4
 			if err := cmd4.Run(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr4.String()))
