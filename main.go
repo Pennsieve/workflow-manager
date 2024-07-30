@@ -161,7 +161,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 
 			// creates log directory
-			outputLogDir := fmt.Sprintf("%s/output/%s/logs", baseDir, integrationID)
+			outputLogDir := fmt.Sprintf("%s/output/%s/workspace", baseDir, integrationID)
 			err = os.MkdirAll(outputLogDir, 0777)
 			if err != nil {
 				logger.Error(err.Error())
@@ -191,13 +191,30 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout.String())
 
+			// cleanup files
+			err = os.RemoveAll(inputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", inputDir)
+
+			err = os.RemoveAll(outputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", outputDir)
+
+			// delete message
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 				QueueUrl:      &queueUrl,
 				ReceiptHandle: msg.ReceiptHandle,
 			})
 
 			if err != nil {
-				logger.Error("error deleting message from SQS %w", err)
+				logger.Error("error deleting message from SQS",
+					slog.String("error", err.Error()))
 			}
 			log.Printf("message id %s is deleted from queue", id)
 		}(msg)
