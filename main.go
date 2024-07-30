@@ -201,12 +201,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// copy workspace files to S3
 			logger.Info("Listing workspace files")
-			cmd.Dir = "/service"
+			cmd2 := exec.Command("ls", "-alh", workspaceDir)
+			cmd2.Dir = "/service"
 			var stdout2 strings.Builder
 			var stderr2 strings.Builder
-			cmd.Stdout = &stdout2
-			cmd.Stderr = &stderr2
-			if err := cmd.Run(); err != nil {
+			cmd2.Stdout = &stdout2
+			cmd2.Stderr = &stderr2
+			if err := cmd2.Run(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr2.String()))
 			}
