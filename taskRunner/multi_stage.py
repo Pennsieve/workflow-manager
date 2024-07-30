@@ -5,7 +5,6 @@ import sys
 import os
 import requests
 import json
-import shutil
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
@@ -176,19 +175,6 @@ def main():
             )
 
             print("Fargate Task has stopped: " + task_definition_name)
-
-    print("cleaning up ...")
-    try:
-        shutil.rmtree(inputDir)
-        print("Success: %s deleted." % (inputDir))
-    except OSError as e:
-        print("Error: %s - %s." % (e.filename, e.strerror))
-
-    try:
-        shutil.rmtree(outputDir)
-        print("Success: %s deleted." % (outputDir))
-    except OSError as e:
-        print("Error: %s - %s." % (e.filename, e.strerror))        
 
 # Standard boilerplate to call the main() function to begin
 # the program.
