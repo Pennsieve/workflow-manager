@@ -199,9 +199,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout.String())
 
-			// copy workspace files to S3
+			// list workspace files
 			logger.Info("Listing workspace files")
-			cmd2 := exec.Command("ls", "-alh", workspaceDir)
+			cmd2 := exec.Command("ls", "-alhR", workspaceDir)
 			cmd2.Dir = "/service"
 			var stdout2 strings.Builder
 			var stderr2 strings.Builder
