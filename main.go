@@ -179,8 +179,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				os.Exit(1)
 			}
 
-			// run pipeline
-			logger.Info("Starting pipeline")
+			// run analysis pipeline
+			logger.Info("Starting analysis pipeline")
 			cmd := exec.Command("nextflow",
 				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
 				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
@@ -198,6 +198,19 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", stderr.String()))
 			}
 			fmt.Println(stdout.String())
+
+			// copy workspace files to S3
+			logger.Info("Listing workspace files")
+			cmd.Dir = "/service"
+			var stdout2 strings.Builder
+			var stderr2 strings.Builder
+			cmd.Stdout = &stdout2
+			cmd.Stderr = &stderr2
+			if err := cmd.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr2.String()))
+			}
+			fmt.Println(stdout2.String())
 
 			// cleanup files
 			err = os.RemoveAll(inputDir)
