@@ -53,6 +53,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = os.MkdirAll("workspace", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("workspace", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
@@ -159,15 +170,21 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error())
 				os.Exit(1)
 			}
-			err = os.Chown(outputDir, 1000, 1000)
+
+			// workspaceDir
+			workspaceDir := fmt.Sprintf("%s/workspace/%s", baseDir, integrationID)
+			err = os.MkdirAll(outputDir, 0777)
 			if err != nil {
 				logger.Error(err.Error())
 				os.Exit(1)
 			}
 
-			// run pipeline
-			logger.Info("Starting pipeline")
-			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+			// run analysis pipeline
+			logger.Info("Starting analysis pipeline")
+			cmd := exec.Command("nextflow",
+				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
+				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"-w", workspaceDir,
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret)
@@ -182,13 +199,72 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout.String())
 
+			// run ecs log collector
+			logger.Info("ecs log collector ...")
+			cmd5 := exec.Command("/bin/sh", "/service/scripts/ecs-logs-collector.sh")
+			cmd5.Dir = workspaceDir
+			var stdout5 strings.Builder
+			var stderr5 strings.Builder
+			cmd5.Stdout = &stdout5
+			cmd5.Stderr = &stderr5
+			if err := cmd5.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr5.String()))
+			}
+			fmt.Println(stdout5.String())
+
+			// list workspace files
+			logger.Info("Listing workspace files")
+			cmd2 := exec.Command("ls", "-alhR", workspaceDir)
+			cmd2.Dir = "/service"
+			var stdout2 strings.Builder
+			var stderr2 strings.Builder
+			cmd2.Stdout = &stdout2
+			cmd2.Stderr = &stderr2
+			if err := cmd2.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr2.String()))
+			}
+			fmt.Println(stdout2.String())
+
+			// list nextflow log contents
+			logger.Info("contents of nextflow.log")
+			cmd4 := exec.Command("cat", fmt.Sprintf("%s/nextflow.log", workspaceDir))
+			cmd4.Dir = "/service"
+			var stdout4 strings.Builder
+			var stderr4 strings.Builder
+			cmd4.Stdout = &stdout4
+			cmd4.Stderr = &stderr4
+			if err := cmd4.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr4.String()))
+			}
+			fmt.Println(stdout4.String())
+
+			// cleanup files
+			err = os.RemoveAll(inputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", inputDir)
+
+			err = os.RemoveAll(outputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", outputDir)
+
+			// delete message
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 				QueueUrl:      &queueUrl,
 				ReceiptHandle: msg.ReceiptHandle,
 			})
 
 			if err != nil {
-				logger.Error("error deleting message from SQS %w", err)
+				logger.Error("error deleting message from SQS",
+					slog.String("error", err.Error()))
 			}
 			log.Printf("message id %s is deleted from queue", id)
 		}(msg)

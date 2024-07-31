@@ -85,8 +85,8 @@ workflow {
     secret_ch = Channel.of(params.apiSecret)
 
     wf_ch = InitWorkflow(key_ch, secret_ch)
-    ms_ch = MultiStageWorkflow(input_ch, output_ch, wf_ch)
-    CleanupWorkflow(ms_ch, input_ch, output_ch)
+    MultiStageWorkflow(input_ch, output_ch, wf_ch)
+    // CleanupWorkflow(ms_ch, input_ch, output_ch)
 }
 
 workflow.onComplete {
