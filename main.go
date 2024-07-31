@@ -199,6 +199,20 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout.String())
 
+			// run ecs log collector
+			logger.Info("ecs log collector ...")
+			cmd5 := exec.Command("/bin/sh", "/service/scripts/ecs-logs-collector.sh")
+			cmd5.Dir = "/service"
+			var stdout5 strings.Builder
+			var stderr5 strings.Builder
+			cmd5.Stdout = &stdout5
+			cmd5.Stderr = &stderr5
+			if err := cmd5.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr5.String()))
+			}
+			fmt.Println(stdout5.String())
+
 			// list workspace files
 			logger.Info("Listing workspace files")
 			cmd2 := exec.Command("ls", "-alhR", workspaceDir)

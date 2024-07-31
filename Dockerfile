@@ -29,6 +29,8 @@ COPY . .
 RUN ls /service
 RUN ls /service/workflows
 RUN ls /service/taskRunner
+RUN ls /service/scripts
+
 
 RUN go build -o /service/main main.go
 
