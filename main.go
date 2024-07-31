@@ -202,7 +202,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			// run ecs log collector
 			logger.Info("ecs log collector ...")
 			cmd5 := exec.Command("/bin/sh", "/service/scripts/ecs-logs-collector.sh")
-			cmd5.Dir = "/service"
+			cmd5.Dir = workspaceDir
 			var stdout5 strings.Builder
 			var stderr5 strings.Builder
 			cmd5.Stdout = &stdout5
