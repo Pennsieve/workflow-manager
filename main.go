@@ -255,7 +255,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				log.Fatalf("GetCallerIdentity: %v\n", err)
 			}
 
-			log.Println(accountId)
+			log.Println(*accountId.Account)
 
 			environment := os.Getenv("ENVIRONMENT")
 			log.Println(environment)
@@ -269,6 +269,20 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			for _, b := range resp.Buckets {
 				log.Println(*b.Name)
 			}
+
+			// sync files
+			logger.Info("syncing")
+			cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/logs/", *accountId.Account))
+			cmd6.Dir = "/service"
+			var stdout6 strings.Builder
+			var stderr6 strings.Builder
+			cmd6.Stdout = &stdout6
+			cmd6.Stderr = &stderr6
+			if err := cmd6.Run(); err != nil {
+				logger.Error(err.Error(),
+					slog.String("error", stderr6.String()))
+			}
+			fmt.Println(stdout6.String())
 
 			// cleanup files
 			err = os.RemoveAll(inputDir)
