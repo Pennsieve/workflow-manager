@@ -272,7 +272,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// sync files
 			logger.Info("syncing")
-			cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/logs/", *accountId.Account))
+			cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/logs/%s/",
+				*accountId.Account, integrationID))
 			cmd6.Dir = "/service"
 			var stdout6 strings.Builder
 			var stderr6 strings.Builder
