@@ -14,8 +14,10 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 const (
@@ -240,6 +242,33 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", stderr4.String()))
 			}
 			fmt.Println(stdout4.String())
+
+			// move data to s3 bucket
+			cfg, err := config.LoadDefaultConfig(context.Background())
+			if err != nil {
+				log.Fatalf("LoadDefaultConfig: %v\n", err)
+			}
+			stsClient := sts.NewFromConfig(cfg)
+			accountId, err := stsClient.GetCallerIdentity(ctx,
+				&sts.GetCallerIdentityInput{})
+			if err != nil {
+				log.Fatalf("GetCallerIdentity: %v\n", err)
+			}
+
+			log.Println(accountId)
+
+			environment := os.Getenv("ENVIRONMENT")
+			log.Println(environment)
+
+			client := s3.NewFromConfig(cfg)
+			resp, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
+			if err != nil {
+				log.Fatalf("ListBuckets: %v\n", err)
+			}
+
+			for _, b := range resp.Buckets {
+				log.Println(*b.Name)
+			}
 
 			// cleanup files
 			err = os.RemoveAll(inputDir)
