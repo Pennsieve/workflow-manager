@@ -189,7 +189,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
-				"--apiSecret", newMsg.ApiSecret)
+				"--apiSecret", newMsg.ApiSecret,
+				"--workspaceDir", workspaceDir)
 			cmd.Dir = "/service"
 			var stdout strings.Builder
 			var stderr strings.Builder
