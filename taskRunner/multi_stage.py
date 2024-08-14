@@ -5,11 +5,24 @@ import sys
 import os
 import requests
 import json
+import logging
+
+logger = logging.getLogger('WorkflowManager')
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
+    workspaceDir=sys.argv[7]
+    filename=f'{workspaceDir}/events.log'
+    # Setup logging
+    logger.setLevel(logging.INFO)
+    handler = logging.FileHandler(filename)
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     print('running task runner for integrationID', sys.argv[1])
     integration_id = sys.argv[1]
     api_key = sys.argv[2]
@@ -66,6 +79,7 @@ def main():
 
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
+        application_type = app['applicationType']
 
         environment = [
             {
@@ -163,6 +177,7 @@ def main():
                 ],
             })
             task_arn = response['tasks'][0]['taskArn']
+            logger.info("started task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
 
             waiter = ecs_client.get_waiter('tasks_stopped')
             waiter.wait(
@@ -173,6 +188,8 @@ def main():
                     'MaxAttempts': 2000
                 }
             )
+
+            logger.info("completed task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
 
             print("Fargate Task has stopped: " + task_definition_name)
 
