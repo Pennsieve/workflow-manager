@@ -14,7 +14,6 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -229,16 +228,6 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 
 			environment := os.Getenv("ENVIRONMENT")
-
-			client := s3.NewFromConfig(cfg)
-			resp, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
-			if err != nil {
-				log.Fatalf("ListBuckets: %v\n", err)
-			}
-
-			for _, b := range resp.Buckets {
-				log.Println(*b.Name)
-			}
 
 			// sync files
 			logger.Info("syncing")
