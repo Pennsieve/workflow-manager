@@ -151,7 +151,7 @@ def main():
         if 'commandArguments' in app:
             command = app['commandArguments']
     
-        logger.info("starting container_name={1},application_type={2}".format(container_name, application_type))
+        logger.info("starting container_name={0},application_type={1}".format(container_name, application_type))
         # start Fargate task
         if cluster_name != "":
             print("Starting Fargate task")
