@@ -202,47 +202,19 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			fmt.Println(stdout.String())
 
-			// run ecs log collector
-			logger.Info("ecs log collector ...")
-			cmd5 := exec.Command("/bin/sh", "/service/scripts/ecs-logs-collector.sh")
-			cmd5.Dir = workspaceDir
-			var stdout5 strings.Builder
-			var stderr5 strings.Builder
-			cmd5.Stdout = &stdout5
-			cmd5.Stderr = &stderr5
-			if err := cmd5.Run(); err != nil {
-				logger.Error(err.Error(),
-					slog.String("error", stderr5.String()))
-			}
-			fmt.Println(stdout5.String())
-
 			// list workspace files
-			logger.Info("Listing workspace files")
-			cmd2 := exec.Command("ls", "-alhR", workspaceDir)
-			cmd2.Dir = "/service"
-			var stdout2 strings.Builder
-			var stderr2 strings.Builder
-			cmd2.Stdout = &stdout2
-			cmd2.Stderr = &stderr2
-			if err := cmd2.Run(); err != nil {
-				logger.Error(err.Error(),
-					slog.String("error", stderr2.String()))
-			}
-			fmt.Println(stdout2.String())
-
-			// list nextflow log contents
-			logger.Info("contents of nextflow.log")
-			cmd4 := exec.Command("cat", fmt.Sprintf("%s/nextflow.log", workspaceDir))
-			cmd4.Dir = "/service"
-			var stdout4 strings.Builder
-			var stderr4 strings.Builder
-			cmd4.Stdout = &stdout4
-			cmd4.Stderr = &stderr4
-			if err := cmd4.Run(); err != nil {
-				logger.Error(err.Error(),
-					slog.String("error", stderr4.String()))
-			}
-			fmt.Println(stdout4.String())
+			// logger.Info("Listing workspace files")
+			// cmd2 := exec.Command("ls", "-alhR", workspaceDir)
+			// cmd2.Dir = "/service"
+			// var stdout2 strings.Builder
+			// var stderr2 strings.Builder
+			// cmd2.Stdout = &stdout2
+			// cmd2.Stderr = &stderr2
+			// if err := cmd2.Run(); err != nil {
+			// 	logger.Error(err.Error(),
+			// 		slog.String("error", stderr2.String()))
+			// }
+			// fmt.Println(stdout2.String())
 
 			// move data to s3 bucket
 			cfg, err := config.LoadDefaultConfig(context.Background())
@@ -256,10 +228,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				log.Fatalf("GetCallerIdentity: %v\n", err)
 			}
 
-			log.Println(*accountId.Account)
-
 			environment := os.Getenv("ENVIRONMENT")
-			log.Println(environment)
 
 			client := s3.NewFromConfig(cfg)
 			resp, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
