@@ -10,6 +10,7 @@ import logging
 logger = logging.getLogger('WorkflowManager')
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
+cloudwatch_client = boto3_client("logs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
@@ -175,6 +176,7 @@ def main():
                     },
                 ],
             })
+
             task_arn = response['tasks'][0]['taskArn']
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
@@ -193,8 +195,15 @@ def main():
                 tasks=[task_arn]
             )
 
-            # print(response)
+            print(response)
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
+            log_group_name = response['tasks'][0]['containers'][0]['logOptions']['logGroup']
+            response = cloudwatch_client.get_log_events(
+                logGroupName=log_group_name
+            )
+
+            print(response)
+            
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
             else:
