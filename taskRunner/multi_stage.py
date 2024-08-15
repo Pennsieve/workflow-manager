@@ -192,8 +192,7 @@ def main():
 
             response = ecs_client.describe_tasks(
                 cluster=cluster_name,
-                tasks=[task_arn],
-                include=['CONTAINERS']
+                tasks=[task_arn]
             )
 
             print(response)
