@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -199,7 +200,19 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
+
 			fmt.Println(stdout.String())
+			f, err := os.Create(fmt.Sprintf("%s/workflow.log", workspaceDir))
+			if err != nil {
+				logger.Error(err.Error())
+			}
+			defer f.Close()
+			bw := bufio.NewWriter(f)
+			_, err = bw.WriteString(stdout.String())
+			if err != nil {
+				logger.Error(err.Error())
+			}
+			bw.Flush()
 
 			// list workspace files
 			// logger.Info("Listing workspace files")

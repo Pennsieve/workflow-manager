@@ -151,7 +151,7 @@ def main():
         if 'commandArguments' in app:
             command = app['commandArguments']
     
-        logger.info("starting container_name={0},application_type={1}".format(container_name, application_type))
+        logger.info("starting: container_name={0},application_type={1}".format(container_name, application_type))
         # start Fargate task
         if cluster_name != "":
             print("Starting Fargate task")
@@ -178,7 +178,7 @@ def main():
                 ],
             })
             task_arn = response['tasks'][0]['taskArn']
-            logger.info("started task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
+            logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
             waiter = ecs_client.get_waiter('tasks_stopped')
             waiter.wait(
@@ -198,12 +198,10 @@ def main():
             print(response)
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
 
-            print(f"Exit code: {exit_code}")
-
             if exit_code == 0:
-                logger.info("success: task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
+                logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
             else:
-                logger.info("failure: task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
+                logger.error("failure: container_name={0},application_type={1}".format(container_name, application_type))
 
             print("Fargate Task has stopped: " + task_definition_name)
 
