@@ -145,8 +145,6 @@ def main():
                 }
                 environment.append(new_param)
 
-            print(environment) 
-
         command = []
         if 'commandArguments' in app:
             command = app['commandArguments']
