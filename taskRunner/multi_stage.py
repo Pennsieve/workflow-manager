@@ -201,7 +201,8 @@ def main():
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
             else:
-                logger.error("failure: container_name={0},application_type={1}".format(container_name, application_type))
+                logger.error("error: container_name={0},application_type={1}".format(container_name, application_type))
+                sys.exit(1)
 
             print("Fargate Task has stopped: " + task_definition_name)
 
