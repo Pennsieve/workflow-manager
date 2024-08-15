@@ -154,7 +154,7 @@ def main():
         logger.info("starting: container_name={0},application_type={1}".format(container_name, application_type))
         # start Fargate task
         if cluster_name != "":
-            print("Starting Fargate task")
+            print("Starting Fargate task"  + task_definition_name)
             response = ecs_client.run_task(
                 cluster = cluster_name,
                 launchType = 'FARGATE',
@@ -195,9 +195,8 @@ def main():
                 tasks=[task_arn]
             )
 
-            print(response)
+            # print(response)
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
-
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
             else:

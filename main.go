@@ -201,6 +201,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", stderr.String()))
 			}
 
+			// prints workflow log
 			fmt.Println(stdout.String())
 			f, err := os.Create(fmt.Sprintf("%s/workflow.log", workspaceDir))
 			if err != nil {
