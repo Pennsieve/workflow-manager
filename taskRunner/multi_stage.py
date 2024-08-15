@@ -190,7 +190,20 @@ def main():
                 }
             )
 
-            logger.info("completed task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
+            response = ecs_client.describe_tasks(
+                tasks=[task_arn],
+                include=['CONTAINERS']
+            )
+
+            print(response)
+            exit_code = response['tasks'][0]['containers'][0]['exitCode']
+
+            print(f"Exit code: {exit_code}")
+
+            if exit_code == 0:
+                logger.info("success: task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
+            else:
+                logger.info("failure: task_arn={0},container_name={1},application_type={2}".format(task_arn, container_name, application_type))
 
             print("Fargate Task has stopped: " + task_definition_name)
 
