@@ -177,6 +177,8 @@ def main():
                 ],
             })
 
+            print(response)
+
             task_arn = response['tasks'][0]['taskArn']
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
@@ -197,12 +199,17 @@ def main():
 
             print(response)
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
-            log_group_name = response['tasks'][0]['containers'][0]['logOptions']['logGroup']
-            response = cloudwatch_client.get_log_events(
-                logGroupName=log_group_name
-            )
 
-            print(response)
+            logresponse = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
+            task_definition = response['taskDefinition']
+            container_definitions = task_definition['containerDefinitions']
+            print(container_definitions[0]['logConfiguration'])
+
+            # log_group_name = response['tasks'][0]['containers'][0]['logOptions']['logGroup']
+            # response = cloudwatch_client.get_log_events(
+            #     logGroupName=log_group_name
+            # )
+            print(logresponse)
             
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
