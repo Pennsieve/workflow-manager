@@ -215,8 +215,10 @@ def main():
                 logGroupName=log_group_name,
                 logStreamName=log_stream_name
             )
-            print(log_events)
-            logger.info(log_events)
+            print(log_events['events'])
+
+            for event in log_events['events']:
+                logger.info("success: container_name={0},application_type={1} => {2}".format(container_name, application_type, event['message']))
             
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
