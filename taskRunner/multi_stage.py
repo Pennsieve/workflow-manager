@@ -182,14 +182,7 @@ def main():
             task_arn = response['tasks'][0]['taskArn']
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
-            response = ecs_client.describe_tasks(
-                cluster=cluster_name,
-                tasks=[task_arn]
-            )
-
-            print(response)
-
-            exit_code = response['tasks'][0]['containers'][0]['exitCode']
+            # gather log related info
             container_taskArn = response['tasks'][0]['containers'][0]['taskArn']
             taskId = container_taskArn.split("/")[2]
             log_stream_name = "ecs/{0}/{1}".format(container_name,taskId) 
@@ -213,6 +206,15 @@ def main():
                     'MaxAttempts': 2000
                 }
             )
+
+            response = ecs_client.describe_tasks(
+                cluster=cluster_name,
+                tasks=[task_arn]
+            )
+
+            print(response)
+
+            exit_code = response['tasks'][0]['containers'][0]['exitCode']
 
             log_events = cloudwatch_client.get_log_events(
                 logGroupName=log_group_name,
