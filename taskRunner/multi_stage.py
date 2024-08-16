@@ -198,12 +198,13 @@ def main():
             )
 
             print(response)
+
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
 
             logresponse = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
-            task_definition = response['taskDefinition']
-            container_definitions = task_definition['containerDefinitions']
-            print(container_definitions[0]['logConfiguration'])
+            # task_definition = response['taskDefinition']
+            # container_definitions = task_definition['containerDefinitions']
+            # print(container_definitions[0]['logConfiguration'])
 
             # log_group_name = response['tasks'][0]['containers'][0]['logOptions']['logGroup']
             # response = cloudwatch_client.get_log_events(
