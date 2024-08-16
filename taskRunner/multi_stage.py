@@ -218,7 +218,7 @@ def main():
             print(log_events['events'])
 
             for event in log_events['events']:
-                logger.info("success: container_name={0},application_type={1} => {2}".format(container_name, application_type, event['message']))
+                logger.info("processing: container_name={0},application_type={1} => {2}".format(container_name, application_type, event['message']))
             
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
