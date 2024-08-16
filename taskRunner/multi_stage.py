@@ -182,16 +182,6 @@ def main():
             task_arn = response['tasks'][0]['taskArn']
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
-            waiter = ecs_client.get_waiter('tasks_stopped')
-            waiter.wait(
-                cluster=cluster_name,
-                tasks=[task_arn],
-                WaiterConfig={
-                    'Delay': 30,
-                    'MaxAttempts': 2000
-                }
-            )
-
             response = ecs_client.describe_tasks(
                 cluster=cluster_name,
                 tasks=[task_arn]
@@ -210,6 +200,19 @@ def main():
             print(log_configuration)
             log_group_name = log_configuration['options']['awslogs-group']
             print(log_configuration['options']['awslogs-group'])
+
+            # add to containers.csv file: log_group_name, log_stream_name, container_name, applicationType
+            # sync
+
+            waiter = ecs_client.get_waiter('tasks_stopped')
+            waiter.wait(
+                cluster=cluster_name,
+                tasks=[task_arn],
+                WaiterConfig={
+                    'Delay': 30,
+                    'MaxAttempts': 2000
+                }
+            )
 
             log_events = cloudwatch_client.get_log_events(
                 logGroupName=log_group_name,
