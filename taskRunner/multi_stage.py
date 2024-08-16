@@ -200,17 +200,23 @@ def main():
             print(response)
 
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
+            container_taskArn = response['tasks'][0]['containers'][0]['taskArn']
+            taskId = container_taskArn.split("/")[2]
+            log_stream_name = "ecs/{0}/{1}".format(container_name,taskId) 
 
-            logresponse = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
-            # task_definition = response['taskDefinition']
-            # container_definitions = task_definition['containerDefinitions']
-            # print(container_definitions[0]['logConfiguration'])
+            log_response = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
+            log_configuration = log_response['taskDefinition']['containerDefinitions'][0]['logConfiguration']
 
-            # log_group_name = response['tasks'][0]['containers'][0]['logOptions']['logGroup']
-            # response = cloudwatch_client.get_log_events(
-            #     logGroupName=log_group_name
-            # )
-            print(logresponse)
+            print(log_configuration)
+            log_group_name = log_configuration['options']['awslogs-group']
+            print(log_configuration['options']['awslogs-group'])
+
+            log_events = cloudwatch_client.get_log_events(
+                logGroupName=log_group_name,
+                logStreamName=log_stream_name
+            )
+            print(log_events)
+            logger.info(log_events)
             
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
