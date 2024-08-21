@@ -62,7 +62,7 @@ def main():
     # create csv file
     with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'container_name', 'application_type']]
+        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_id', 'container_name', 'application_type']]
 
         for row in data:
             writer.writerow(row)
@@ -94,6 +94,7 @@ def main():
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
         application_type = app['applicationType']
+        application_id = app['uuid']
 
         environment = [
             {
@@ -207,10 +208,10 @@ def main():
             log_group_name = log_configuration['options']['awslogs-group']
             print(log_configuration['options']['awslogs-group'])
 
-            # add to processors.csv file: integration_id, log_group_name, log_stream_name, container_name, applicationType
+            # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_id, container_name, applicationType
             with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, taskId, log_group_name, log_stream_name, container_name, application_type]]
+                data = [[integration_id, taskId, log_group_name, log_stream_name, application_id, container_name, application_type]]
 
                 for row in data:
                     writer.writerow(row)

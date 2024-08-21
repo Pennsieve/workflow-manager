@@ -34,7 +34,7 @@ def main():
     # create csv file
     with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        data = [['integration_id', 'log_group_name', 'log_stream_name', 'container_name', 'application_type']]
+        data = [['integration_id', 'log_group_name', 'log_stream_name', 'application_id', 'container_name', 'application_type']]
 
         for row in data:
             writer.writerow(row)
@@ -47,6 +47,7 @@ def main():
         task_definition_name = app['applicationId']
         logger.info("started container_name={0},task_definition_name={1}".format(container_name, task_definition_name))
         application_type = app['applicationType']
+        application_id = app['uuid']
         
         print(container_name, task_definition_name)
 
@@ -72,7 +73,7 @@ def main():
 
         with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
             writer = csv.writer(csvfile)
-            data = [['someId', 'someLogGroupName', 'someLogStreamName', container_name, application_type]]
+            data = [['someId', 'someLogGroupName', 'someLogStreamName', application_id, container_name, application_type]]
 
             for row in data:
                 writer.writerow(row)
