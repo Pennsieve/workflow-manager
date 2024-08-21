@@ -6,6 +6,7 @@ import os
 import requests
 import json
 import logging
+import csv
 
 logger = logging.getLogger('WorkflowManager')
 
@@ -56,6 +57,18 @@ def main():
 
     container_name = ""
     task_definition_name = ""
+
+    # create processors.csv file and header: integration_id, log_group_name, log_stream_name, container_name, applicationType
+    # create csv file
+    with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'container_name', 'application_type']]
+
+        for row in data:
+            writer.writerow(row)
+
+        csvfile.close()   
+
     for app in workflow:
         # get session_token
         r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
@@ -194,7 +207,14 @@ def main():
             log_group_name = log_configuration['options']['awslogs-group']
             print(log_configuration['options']['awslogs-group'])
 
-            # add to containers.csv file: log_group_name, log_stream_name, container_name, applicationType
+            # add to processors.csv file: integration_id, log_group_name, log_stream_name, container_name, applicationType
+            with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                data = [[integration_id, taskId, log_group_name, log_stream_name, container_name, application_type]]
+
+                for row in data:
+                    writer.writerow(row)
+                csvfile.close()
             # sync
 
             waiter = ecs_client.get_waiter('tasks_stopped')
