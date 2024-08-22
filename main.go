@@ -17,7 +17,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 const (
@@ -216,33 +215,33 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			bw.Flush()
 
 			// move data to s3 bucket
-			cfg, err := config.LoadDefaultConfig(context.Background())
-			if err != nil {
-				log.Fatalf("LoadDefaultConfig: %v\n", err)
-			}
-			stsClient := sts.NewFromConfig(cfg)
-			accountId, err := stsClient.GetCallerIdentity(ctx,
-				&sts.GetCallerIdentityInput{})
-			if err != nil {
-				log.Fatalf("GetCallerIdentity: %v\n", err)
-			}
+			// cfg, err := config.LoadDefaultConfig(context.Background())
+			// if err != nil {
+			// 	log.Fatalf("LoadDefaultConfig: %v\n", err)
+			// }
+			// stsClient := sts.NewFromConfig(cfg)
+			// accountId, err := stsClient.GetCallerIdentity(ctx,
+			// 	&sts.GetCallerIdentityInput{})
+			// if err != nil {
+			// 	log.Fatalf("GetCallerIdentity: %v\n", err)
+			// }
 
-			environment := os.Getenv("ENVIRONMENT")
+			// environment := os.Getenv("ENVIRONMENT")
 
 			// sync files
-			logger.Info("syncing")
-			cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/%s/logs/%s/",
-				*accountId.Account, environment, integrationID))
-			cmd6.Dir = "/service"
-			var stdout6 strings.Builder
-			var stderr6 strings.Builder
-			cmd6.Stdout = &stdout6
-			cmd6.Stderr = &stderr6
-			if err := cmd6.Run(); err != nil {
-				logger.Error(err.Error(),
-					slog.String("error", stderr6.String()))
-			}
-			fmt.Println(stdout6.String())
+			// logger.Info("syncing")
+			// cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/%s/logs/%s/",
+			// 	*accountId.Account, environment, integrationID))
+			// cmd6.Dir = "/service"
+			// var stdout6 strings.Builder
+			// var stderr6 strings.Builder
+			// cmd6.Stdout = &stdout6
+			// cmd6.Stderr = &stderr6
+			// if err := cmd6.Run(); err != nil {
+			// 	logger.Error(err.Error(),
+			// 		slog.String("error", stderr6.String()))
+			// }
+			// fmt.Println(stdout6.String())
 
 			// cleanup files
 			err = os.RemoveAll(inputDir)
