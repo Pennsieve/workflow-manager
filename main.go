@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -200,56 +199,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", stderr.String()))
 			}
 
-			// prints workflow log
-			fmt.Println(stdout.String())
-			f, err := os.Create(fmt.Sprintf("%s/workflow.log", workspaceDir))
-			if err != nil {
-				logger.Error(err.Error())
-			}
-			defer f.Close()
-			bw := bufio.NewWriter(f)
-			_, err = bw.WriteString(stdout.String())
-			if err != nil {
-				logger.Error(err.Error())
-			}
-			bw.Flush()
-
-			// move data to s3 bucket
-			// cfg, err := config.LoadDefaultConfig(context.Background())
-			// if err != nil {
-			// 	log.Fatalf("LoadDefaultConfig: %v\n", err)
-			// }
-			// stsClient := sts.NewFromConfig(cfg)
-			// accountId, err := stsClient.GetCallerIdentity(ctx,
-			// 	&sts.GetCallerIdentityInput{})
-			// if err != nil {
-			// 	log.Fatalf("GetCallerIdentity: %v\n", err)
-			// }
-
-			// environment := os.Getenv("ENVIRONMENT")
-
-			// sync files
-			// logger.Info("syncing")
-			// cmd6 := exec.Command("aws", "s3", "sync", workspaceDir, fmt.Sprintf("s3://tfstate-%s/%s/logs/%s/",
-			// 	*accountId.Account, environment, integrationID))
-			// cmd6.Dir = "/service"
-			// var stdout6 strings.Builder
-			// var stderr6 strings.Builder
-			// cmd6.Stdout = &stdout6
-			// cmd6.Stderr = &stderr6
-			// if err := cmd6.Run(); err != nil {
-			// 	logger.Error(err.Error(),
-			// 		slog.String("error", stderr6.String()))
-			// }
-			// fmt.Println(stdout6.String())
-
 			// cleanup files
 			err = os.RemoveAll(inputDir)
 			if err != nil {
 				logger.Error("error deleting files",
 					slog.String("error", err.Error()))
 			}
-			log.Printf("Dir %s deleted", inputDir)
+			log.Printf("dir %s deleted", inputDir)
 
 			err = os.RemoveAll(outputDir)
 			if err != nil {

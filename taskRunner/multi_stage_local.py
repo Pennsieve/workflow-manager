@@ -12,13 +12,12 @@ logger = logging.getLogger('WorkflowManager')
 def main():
     workflow=json.loads(sys.argv[1])
     workspaceDir=sys.argv[2]
-    filename=f'{workspaceDir}/events.log'
     # print(workflow)
 
     # Set a log level for the logger
     logger.setLevel(logging.INFO)
     # Create a console handler 
-    handler = logging.FileHandler(filename)
+    handler = logging.StreamHandler()
     # Set INFO level for handler
     handler.setLevel(logging.INFO)
     # Create a message format that matches earlier example

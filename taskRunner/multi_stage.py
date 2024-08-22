@@ -12,21 +12,19 @@ import subprocess
 logger = logging.getLogger('WorkflowManager')
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
-cloudwatch_client = boto3_client("logs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
     workspaceDir=sys.argv[7]
-    filename=f'{workspaceDir}/events.log'
     # Setup logging
     logger.setLevel(logging.INFO)
-    handler = logging.FileHandler(filename)
+    handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    print('running task runner for integrationID', sys.argv[1])
+    logger.info('running task runner for integrationID', sys.argv[1])
     integration_id = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
@@ -59,11 +57,11 @@ def main():
     container_name = ""
     task_definition_name = ""
 
-    # create processors.csv file and header: integration_id, log_group_name, log_stream_name, container_name, applicationType
+    # create processors.csv file and header: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
     # create csv file
     with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_id', 'container_name', 'application_type']]
+        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']]
 
         for row in data:
             writer.writerow(row)
@@ -95,7 +93,7 @@ def main():
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
         application_type = app['applicationType']
-        application_id = app['uuid']
+        application_uuid = app['uuid']
 
         environment = [
             {
@@ -168,7 +166,7 @@ def main():
         logger.info("starting: container_name={0},application_type={1}".format(container_name, application_type))
         # start Fargate task
         if cluster_name != "":
-            print("Starting Fargate task"  + task_definition_name)
+            logger.info("starting fargate task"  + task_definition_name)
             response = ecs_client.run_task(
                 cluster = cluster_name,
                 launchType = 'FARGATE',
@@ -192,8 +190,6 @@ def main():
                 ],
             })
 
-            print(response)
-
             task_arn = response['tasks'][0]['taskArn']
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
             
@@ -204,15 +200,12 @@ def main():
 
             log_response = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
             log_configuration = log_response['taskDefinition']['containerDefinitions'][0]['logConfiguration']
-
-            print(log_configuration)
             log_group_name = log_configuration['options']['awslogs-group']
-            print(log_configuration['options']['awslogs-group'])
 
-            # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_id, container_name, applicationType
+            # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
             with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, taskId, log_group_name, log_stream_name, application_id, container_name, application_type]]
+                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
 
                 for row in data:
                     writer.writerow(row)
@@ -221,18 +214,14 @@ def main():
             # sync
             sts_client = boto3_client("sts")
             account_id = sts_client.get_caller_identity()["Account"]
-            print(account_id)
             bucket_name = "tfstate-{0}".format(account_id)
-            print(bucket_name)
             prefix = "{0}/logs/{1}".format(env,integration_id)
-            print(prefix)
 
             try:
                 output = subprocess.run(["aws", "s3", "sync", workspaceDir, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
-                print(output)
-
+                logger.info(output)
             except subprocess.CalledProcessError as e:
-                print(f"command failed with return code {e.returncode}")
+                logger.info(f"command failed with return code {e.returncode}")
             
             waiter = ecs_client.get_waiter('tasks_stopped')
             waiter.wait(
@@ -249,18 +238,7 @@ def main():
                 tasks=[task_arn]
             )
 
-            print(response)
-
             exit_code = response['tasks'][0]['containers'][0]['exitCode']
-
-            log_events = cloudwatch_client.get_log_events(
-                logGroupName=log_group_name,
-                logStreamName=log_stream_name
-            )
-            print(log_events['events'])
-
-            for event in log_events['events']:
-                logger.info("processing: container_name={0},application_type={1} => {2}".format(container_name, application_type, event['message']))
             
             if exit_code == 0:
                 logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
@@ -268,7 +246,7 @@ def main():
                 logger.error("error: container_name={0},application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 
-            print("Fargate Task has stopped: " + task_definition_name)
+            logger.info("fargate task has stopped: " + task_definition_name)
 
 # Standard boilerplate to call the main() function to begin
 # the program.
