@@ -224,11 +224,11 @@ def main():
             print(account_id)
             bucket_name = "tfstate-{0}".format(account_id)
             print(bucket_name)
-            prefix = "{0}/logs/{1}".format(environment,integration_id)
+            prefix = "{0}/logs/{1}".format(env,integration_id)
             print(prefix)
 
             try:
-                output = subprocess.run(["aws", "s3", "sync", workspaceDir, "s3://tfstate-{0}/{1}/logs/{2}/".format(account_id, environment, integration_id)]) 
+                output = subprocess.run(["aws", "s3", "sync", workspaceDir, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
                 print(output)
 
             except subprocess.CalledProcessError as e:
