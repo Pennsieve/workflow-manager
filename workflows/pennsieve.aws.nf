@@ -46,35 +46,12 @@ process MultiStageWorkflow {
     script:
     if ("$ENVIRONMENT" != 'LOCAL')
         """
-        python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir
+        python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir ${params.workspaceDir}
         """
     else
         """
         echo "running local multi-stage-processor\n"
-        python3.9 /service/taskRunner/multi_stage_local.py '$wf'
-        """
-}
-
-process CleanupWorkflow {
-    debug true
-    
-    input:
-        val multiStageOutput
-        val inputDir
-        val outputDir
-
-    output:
-        stdout
-
-    script:
-    if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/cleanup.py '$multiStageOutput' $inputDir $outputDir
-        """
-    else
-        """
-        echo "running local cleanup\n"
-        python3.9 /service/taskRunner/cleanup_local.py '$multiStageOutput' $inputDir $outputDir
+        python3.9 /service/taskRunner/multi_stage_local.py '$wf' ${params.workspaceDir}
         """
 }
 
@@ -85,8 +62,7 @@ workflow {
     secret_ch = Channel.of(params.apiSecret)
 
     wf_ch = InitWorkflow(key_ch, secret_ch)
-    ms_ch = MultiStageWorkflow(input_ch, output_ch, wf_ch)
-    CleanupWorkflow(ms_ch, input_ch, output_ch)
+    MultiStageWorkflow(input_ch, output_ch, wf_ch)
 }
 
 workflow.onComplete {

@@ -53,6 +53,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = os.MkdirAll("workspace", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("workspace", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
@@ -159,18 +170,25 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error())
 				os.Exit(1)
 			}
-			err = os.Chown(outputDir, 1000, 1000)
+
+			// workspaceDir
+			workspaceDir := fmt.Sprintf("%s/workspace/%s", baseDir, integrationID)
+			err = os.MkdirAll(outputDir, 0777)
 			if err != nil {
 				logger.Error(err.Error())
 				os.Exit(1)
 			}
 
-			// run pipeline
-			logger.Info("Starting pipeline")
-			cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+			// run analysis pipeline
+			logger.Info("Starting analysis pipeline")
+			cmd := exec.Command("nextflow",
+				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
+				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"-w", workspaceDir,
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
-				"--apiSecret", newMsg.ApiSecret)
+				"--apiSecret", newMsg.ApiSecret,
+				"--workspaceDir", workspaceDir)
 			cmd.Dir = "/service"
 			var stdout strings.Builder
 			var stderr strings.Builder
@@ -180,15 +198,31 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
-			fmt.Println(stdout.String())
 
+			// cleanup files
+			err = os.RemoveAll(inputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("dir %s deleted", inputDir)
+
+			err = os.RemoveAll(outputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", outputDir)
+
+			// delete message
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 				QueueUrl:      &queueUrl,
 				ReceiptHandle: msg.ReceiptHandle,
 			})
 
 			if err != nil {
-				logger.Error("error deleting message from SQS %w", err)
+				logger.Error("error deleting message from SQS",
+					slog.String("error", err.Error()))
 			}
 			log.Printf("message id %s is deleted from queue", id)
 		}(msg)

@@ -21,10 +21,16 @@ func main() {
 	apiSecret := os.Getenv("PENNSIEVE_API_SECRET")
 
 	// run pipeline
-	cmd := exec.Command("nextflow", "run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+	workspaceDir := "/service/workflows"
+	cmd := exec.Command("nextflow",
+		"-log", "/service/workflows/nextflow.log",
+		"run", "./workflows/pennsieve.aws.nf",
+		"-w", workspaceDir,
+		"-ansi-log", "false",
 		"--integrationID", integrationID,
 		"--apiKey", apiKey,
-		"--apiSecret", apiSecret)
+		"--apiSecret", apiSecret,
+		"--workspaceDir", workspaceDir)
 	cmd.Dir = "/service"
 	var stdout strings.Builder
 	var stderr strings.Builder

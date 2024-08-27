@@ -5,12 +5,26 @@ import sys
 import os
 import requests
 import json
+import logging
+import csv
+import subprocess
+
+logger = logging.getLogger('WorkflowManager')
 
 ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
 
 # Gather our code in a main() function
 def main():
-    print('running task runner for integrationID', sys.argv[1])
+    workspaceDir=sys.argv[7]
+    # Setup logging
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
+    logger.info('running task runner for integrationID', sys.argv[1])
     integration_id = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
@@ -42,6 +56,18 @@ def main():
 
     container_name = ""
     task_definition_name = ""
+
+    # create processors.csv file and header: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
+    # create csv file
+    with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']]
+
+        for row in data:
+            writer.writerow(row)
+
+        csvfile.close()   
+
     for app in workflow:
         # get session_token
         r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
@@ -66,6 +92,8 @@ def main():
 
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
+        application_type = app['applicationType']
+        application_uuid = app['uuid']
 
         environment = [
             {
@@ -131,15 +159,14 @@ def main():
                 }
                 environment.append(new_param)
 
-            print(environment) 
-
         command = []
         if 'commandArguments' in app:
             command = app['commandArguments']
     
+        logger.info("starting: container_name={0},application_type={1}".format(container_name, application_type))
         # start Fargate task
         if cluster_name != "":
-            print("Starting Fargate task")
+            logger.info("starting fargate task"  + task_definition_name)
             response = ecs_client.run_task(
                 cluster = cluster_name,
                 launchType = 'FARGATE',
@@ -162,8 +189,40 @@ def main():
                     },
                 ],
             })
-            task_arn = response['tasks'][0]['taskArn']
 
+            task_arn = response['tasks'][0]['taskArn']
+            logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
+            
+            # gather log related info
+            container_taskArn = response['tasks'][0]['containers'][0]['taskArn']
+            taskId = container_taskArn.split("/")[2]
+            log_stream_name = "ecs/{0}/{1}".format(container_name,taskId) 
+
+            log_response = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
+            log_configuration = log_response['taskDefinition']['containerDefinitions'][0]['logConfiguration']
+            log_group_name = log_configuration['options']['awslogs-group']
+
+            # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
+            with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
+                writer = csv.writer(csvfile)
+                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+
+                for row in data:
+                    writer.writerow(row)
+                csvfile.close()
+            
+            # sync
+            sts_client = boto3_client("sts")
+            account_id = sts_client.get_caller_identity()["Account"]
+            bucket_name = "tfstate-{0}".format(account_id)
+            prefix = "{0}/logs/{1}".format(env,integration_id)
+
+            try:
+                output = subprocess.run(["aws", "s3", "sync", workspaceDir, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
+                logger.info(output)
+            except subprocess.CalledProcessError as e:
+                logger.info(f"command failed with return code {e.returncode}")
+            
             waiter = ecs_client.get_waiter('tasks_stopped')
             waiter.wait(
                 cluster=cluster_name,
@@ -174,7 +233,20 @@ def main():
                 }
             )
 
-            print("Fargate Task has stopped: " + task_definition_name)
+            response = ecs_client.describe_tasks(
+                cluster=cluster_name,
+                tasks=[task_arn]
+            )
+
+            exit_code = response['tasks'][0]['containers'][0]['exitCode']
+            
+            if exit_code == 0:
+                logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
+            else:
+                logger.error("error: container_name={0},application_type={1}".format(container_name, application_type))
+                sys.exit(1)
+
+            logger.info("fargate task has stopped: " + task_definition_name)
 
 # Standard boilerplate to call the main() function to begin
 # the program.
