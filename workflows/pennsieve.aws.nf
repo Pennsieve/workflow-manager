@@ -55,14 +55,36 @@ process MultiStageWorkflow {
         """
 }
 
+process FinaliseWorkflow {
+    debug true
+    
+    input:
+        val x
+        val y
+        val wf
+    output:
+        stdout
+
+    script:
+    if ("$ENVIRONMENT" != 'LOCAL')
+        """
+        python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+        """
+    else
+        """
+        python3.9 /service/taskRunner/finalise_local.py
+        """
+}
+
 workflow {
     input_ch = Channel.of(params.inputDir)
     output_ch = Channel.of(params.outputDir)
     key_ch = Channel.of(params.apiKey)
     secret_ch = Channel.of(params.apiSecret)
 
-    wf_ch = InitWorkflow(key_ch, secret_ch)
-    MultiStageWorkflow(input_ch, output_ch, wf_ch)
+    init_ch = InitWorkflow(key_ch, secret_ch)
+    wf_ch = MultiStageWorkflow(input_ch, output_ch, init_ch)
+    FinaliseWorkflow(key_ch, secret_ch, wf_ch)
 }
 
 workflow.onComplete {
