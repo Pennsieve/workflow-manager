@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,7 +11,10 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -22,6 +26,13 @@ const (
 	visibilityTimeout = 4320 * 10
 	waitingTimeout    = 20
 )
+
+type CommandStatusInfo struct {
+	IntegrationID string
+	PID           int
+	InputDir      string
+	OutputDir     string
+}
 
 func main() {
 	programLevel := new(slog.LevelVar)
@@ -79,6 +90,21 @@ func main() {
 
 	sqsSvc := sqs.NewFromConfig(cfg)
 
+	// Tacking file for PID, IntegrationID
+	csvFile, err := os.Create(filepath.Join(baseDir, "pid_tracking.csv"))
+	if err != nil {
+		logger.Info("Error creating CSV file:", err)
+	}
+
+	defer csvFile.Close()
+
+	csvWriter := csv.NewWriter(csvFile)
+	defer csvWriter.Flush()
+
+	csvWriter.Write([]string{"IntegrationID", "PID"})
+
+	var wg sync.WaitGroup
+
 loop:
 	for {
 		select {
@@ -87,7 +113,7 @@ loop:
 			cancel() // cancel context
 
 		default:
-			_, err := processSQS(ctx, sqsSvc, queueUrl, logger)
+			_, err := processSQS(ctx, sqsSvc, queueUrl, logger, &wg)
 
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
@@ -107,9 +133,10 @@ type MsgType struct {
 	IntegrationID string `json:"integrationId"`
 	ApiKey        string `json:"api_key"`
 	ApiSecret     string `json:"api_secret"`
+	Cancel        bool   `json:"cancel"`
 }
 
-func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger) (bool, error) {
+func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger, wg *sync.WaitGroup) (bool, error) {
 	input := &sqs.ReceiveMessageInput{
 		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: 1,
@@ -128,7 +155,12 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		return false, nil
 	}
 
+	// Track completed nextflow tasks
+	doneChannel := make(chan *CommandStatusInfo)
+
 	for _, msg := range resp.Messages {
+		wg.Add(1)
+
 		var newMsg MsgType
 		id := *msg.MessageId
 
@@ -139,7 +171,15 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
 
+		// If a message comes in with new key Cancel, find the process and kill it
+		if newMsg.Cancel == true {
+			killProcess(newMsg.IntegrationID)
+			wg.Done()
+			continue
+		}
+
 		go func(msg types.Message) {
+			defer wg.Done()
 			logger.Info("Initializing workspace ...")
 
 			integrationID := newMsg.IntegrationID
@@ -194,39 +234,142 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			var stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
-			if err := cmd.Run(); err != nil {
+
+			// cmd.Start() to stop blocking and not wait compared to cmd.Run()
+			if err := cmd.Start(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
 
-			// cleanup files
-			err = os.RemoveAll(inputDir)
-			if err != nil {
-				logger.Error("error deleting files",
-					slog.String("error", err.Error()))
-			}
-			log.Printf("dir %s deleted", inputDir)
+			// Save PID to file
+			pid := cmd.Process.Pid
+			csvFile, err := os.OpenFile(filepath.Join(baseDir, "pid_tracking.csv"), os.O_APPEND|os.O_WRONLY, os.ModeAppend)
+			csvWriter := csv.NewWriter(csvFile)
 
-			err = os.RemoveAll(outputDir)
+			err = csvWriter.Write([]string{integrationID, fmt.Sprintf("%d", pid)})
 			if err != nil {
-				logger.Error("error deleting files",
-					slog.String("error", err.Error()))
+				logger.Info("Could not write to PID file")
 			}
-			log.Printf("Dir %s deleted", outputDir)
+			csvWriter.Flush()
 
-			// delete message
-			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-				QueueUrl:      &queueUrl,
-				ReceiptHandle: msg.ReceiptHandle,
-			})
-
+			err = cmd.Wait()
 			if err != nil {
-				logger.Error("error deleting message from SQS",
-					slog.String("error", err.Error()))
+				logger.Info(fmt.Sprintf("Error waiting for nextflow command %v. PID: %d", err, pid))
 			}
-			log.Printf("message id %s is deleted from queue", id)
+
+			// Report work done
+			doneChannel <- &CommandStatusInfo{
+				IntegrationID: integrationID,
+				PID:           pid,
+				InputDir:      inputDir,
+				OutputDir:     outputDir,
+			}
 		}(msg)
 
+		// Receive complete messages when nextflow task is done
+		// Then clean up input / output files
+		go func() {
+			for cmdInfo := range doneChannel {
+				// Delete input and output directories after the command completes
+				fmt.Printf("Clean up files for (IntegrationID: %s)\n", cmdInfo.IntegrationID)
+
+				err = os.RemoveAll(cmdInfo.InputDir)
+				if err != nil {
+					logger.Error("error deleting files",
+						slog.String("error", err.Error()))
+				}
+				log.Printf("dir %s deleted", cmdInfo.InputDir)
+
+				err = os.RemoveAll(cmdInfo.OutputDir)
+				if err != nil {
+					logger.Error("error deleting files",
+						slog.String("error", err.Error()))
+				}
+				log.Printf("Dir %s deleted", cmdInfo.OutputDir)
+
+				// delete message
+				_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+					QueueUrl:      &queueUrl,
+					ReceiptHandle: msg.ReceiptHandle,
+				})
+
+				if err != nil {
+					logger.Error("error deleting message from SQS",
+						slog.String("error", err.Error()))
+				}
+				log.Printf("message id %s is deleted from queue", id)
+			}
+		}()
+
+		close(doneChannel)
+
 	}
+	wg.Wait()
 	return true, nil
+}
+
+func killProcess(integrationID string) {
+	baseDir := os.Getenv("BASE_DIR")
+	if baseDir == "" {
+		baseDir = "/mnt/efs"
+	}
+
+	file, err := os.Open(filepath.Join(baseDir, "pid_tracking.csv"))
+	if err != nil {
+		fmt.Printf("Error opening file: %v\n", err)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+	if err != nil {
+		fmt.Printf("Error reading CSV: %v\n", err)
+		return
+	}
+
+	dataMap := make(map[string]string)
+	for i, row := range rows {
+		if i == 0 {
+			// skip header row
+			continue
+		}
+		if len(row) >= 2 {
+			dataMap[row[0]] = row[1]
+		}
+
+		if pidString, exists := dataMap[integrationID]; exists {
+			fmt.Printf("Killing integration %s with PID %s\n", integrationID, pidString)
+			pid, err := strconv.Atoi(pidString)
+			if err != nil {
+				fmt.Printf("Error converting string to int: %v\n", err)
+				return
+			}
+			// kill -9 [PID]
+			err = syscall.Kill(pid, syscall.SIGKILL)
+			if err != nil {
+				fmt.Printf("Failed to kill process %d: %v\n", pid, err)
+				return
+			}
+			// Kill running ECS task
+			killECS()
+			updateIntegration()
+			cleanPidFile()
+
+		} else {
+			fmt.Printf("IntegrationID %s not found\n", integrationID)
+		}
+	}
+}
+
+func killECS() {
+
+}
+
+func updateIntegration() {
+
+}
+
+func cleanPidFile() {
+
 }
