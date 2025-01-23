@@ -61,7 +61,7 @@ def main():
     # create csv file
     with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']]
+        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type', 'task_arn', 'cluster_name']]
 
         for row in data:
             writer.writerow(row)
@@ -205,7 +205,7 @@ def main():
             # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
             with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type, task_arn, cluster_name]]
 
                 for row in data:
                     writer.writerow(row)
