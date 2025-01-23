@@ -173,7 +173,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 		// If a message comes in with new key Cancel, find the process and kill it
 		if newMsg.Cancel == true {
-			killProcess(newMsg.IntegrationID)
+			// TODO: Set cancelling status immediately first
+			go killProcess(newMsg.IntegrationID)
 			wg.Done()
 			continue
 		}
@@ -328,6 +329,7 @@ func killProcess(integrationID string) {
 		return
 	}
 
+	// Creat dict to have e asy access to PIDs
 	dataMap := make(map[string]string)
 	for i, row := range rows {
 		if i == 0 {
@@ -363,13 +365,13 @@ func killProcess(integrationID string) {
 }
 
 func killECS() {
-
+	// TODO: Kill ECS task based on containerID from processors.csv
 }
 
 func updateIntegration() {
-
+	// TODO: Send back Cancelled status on successful kill of container
 }
 
 func cleanPidFile() {
-
+	// TODO: House keeping, clean up PID file
 }
