@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -16,10 +19,13 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
 )
 
 const (
@@ -174,7 +180,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		// If a message comes in with new key Cancel, find the process and kill it
 		if newMsg.Cancel == true {
 			// TODO: Set cancelling status immediately first
-			go killProcess(newMsg.IntegrationID)
+			var fileMutex sync.Mutex
+			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger)
 			wg.Done()
 			continue
 		}
@@ -269,24 +276,24 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 		// Receive complete messages when nextflow task is done
 		// Then clean up input / output files
-		go func() {
+		go func(msg types.Message) {
 			for cmdInfo := range doneChannel {
 				// Delete input and output directories after the command completes
-				fmt.Printf("Clean up files for (IntegrationID: %s)\n", cmdInfo.IntegrationID)
+				logger.Info("Clean up files for (IntegrationID: %s)\n", cmdInfo.IntegrationID)
 
 				err = os.RemoveAll(cmdInfo.InputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				log.Printf("dir %s deleted", cmdInfo.InputDir)
+				logger.Info("dir %s deleted", cmdInfo.InputDir)
 
 				err = os.RemoveAll(cmdInfo.OutputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				log.Printf("Dir %s deleted", cmdInfo.OutputDir)
+				logger.Info("Dir %s deleted", cmdInfo.OutputDir)
 
 				// delete message
 				_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
@@ -298,9 +305,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					logger.Error("error deleting message from SQS",
 						slog.String("error", err.Error()))
 				}
-				log.Printf("message id %s is deleted from queue", id)
+				logger.Info("message id %s is deleted from queue", id)
 			}
-		}()
+		}(msg)
 
 		close(doneChannel)
 
@@ -309,15 +316,14 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 	return true, nil
 }
 
-func killProcess(integrationID string) {
-	baseDir := os.Getenv("BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/mnt/efs"
-	}
+func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger) {
+	lock.Lock()
+	defer lock.Unlock()
+	baseDir := getBaseDir()
 
 	file, err := os.Open(filepath.Join(baseDir, "pid_tracking.csv"))
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
+		logger.Info("Error opening file: %v\n", err)
 		return
 	}
 	defer file.Close()
@@ -325,7 +331,7 @@ func killProcess(integrationID string) {
 	reader := csv.NewReader(file)
 	rows, err := reader.ReadAll()
 	if err != nil {
-		fmt.Printf("Error reading CSV: %v\n", err)
+		logger.Info("Error reading CSV: %v\n", err)
 		return
 	}
 
@@ -341,22 +347,25 @@ func killProcess(integrationID string) {
 		}
 
 		if pidString, exists := dataMap[integrationID]; exists {
-			fmt.Printf("Killing integration %s with PID %s\n", integrationID, pidString)
+			logger.Info("Killing integration %s with PID %s\n", integrationID, pidString)
 			pid, err := strconv.Atoi(pidString)
 			if err != nil {
-				fmt.Printf("Error converting string to int: %v\n", err)
+				logger.Error("Error converting string to int: %v\n", err)
 				return
 			}
 			// kill -9 [PID]
 			err = syscall.Kill(pid, syscall.SIGKILL)
 			if err != nil {
-				fmt.Printf("Failed to kill process %d: %v\n", pid, err)
+				logger.Error("Failed to kill process %d: %v\n", pid, err)
 				return
 			}
 			// Kill running ECS task
-			killECS()
-			updateIntegration()
-			cleanPidFile()
+			cancelledAllTasks := killECS(ctx, logger, integrationID)
+			if cancelledAllTasks {
+				updateIntegration("CANCELED", integrationID)
+			}
+
+			//cleanPidFile()
 
 		} else {
 			fmt.Printf("IntegrationID %s not found\n", integrationID)
@@ -364,14 +373,83 @@ func killProcess(integrationID string) {
 	}
 }
 
-func killECS() {
-	// TODO: Kill ECS task based on containerID from processors.csv
+func killECS(ctx context.Context, logger *slog.Logger, integrationID string) bool {
+	//var cancelledTasks []string
+	//var integrationId = os.Getenv("INTEGRATION_ID")
+	var TaskArn = 7
+	var ClusterName = 8
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		logger.Error("LoadDefaultConfig:" + err.Error())
+		return false
+	}
+
+	client := ecs.NewFromConfig(cfg)
+
+	// Get taskArn and ClusterName
+	baseDir := getBaseDir()
+	file, err := os.Open(filepath.Join(baseDir, "processors.csv"))
+	if err != nil {
+		logger.Info("Error opening file: %v\n", err)
+		return false
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	rows, err := reader.ReadAll()
+
+	// Loop through and stop each task
+	for _, row := range rows {
+		if row[0] == integrationID {
+			// Call StopTask API
+			input := &ecs.StopTaskInput{
+				Cluster: aws.String(row[ClusterName]),
+				Task:    aws.String(row[TaskArn]),
+			}
+
+			_, err = client.StopTask(context.TODO(), input)
+			if err != nil {
+				logger.Error("failed to stop task, %v", err)
+				return false
+			}
+		}
+	}
+	return true
 }
 
-func updateIntegration() {
-	// TODO: Send back Cancelled status on successful kill of container
+func updateIntegration(status string, integrationID string) {
+	url := fmt.Sprintf("https://app.pennsieve.io/workflows/instances/%s/status", integrationID)
+
+	jsonData := fmt.Sprintf(`{
+		"uuid": %s,
+		"status": %s,
+		"timestamp": %s
+	}`, integrationID, status, time.Now().String())
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(jsonData)))
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		fmt.Println("Error making request:", err)
+		return
+	}
+	defer resp.Body.Close()
 }
 
 func cleanPidFile() {
 	// TODO: House keeping, clean up PID file
+}
+
+func getBaseDir() string {
+	baseDir := os.Getenv("BASE_DIR")
+	if baseDir == "" {
+		baseDir = "/mnt/efs"
+	}
+	return baseDir
 }
