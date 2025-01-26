@@ -181,6 +181,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// run analysis pipeline
 			logger.Info("Starting analysis pipeline")
+			logger.Info("Starting debugging")
 			cmd := exec.Command("nextflow",
 				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
 				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
@@ -194,11 +195,15 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			var stderr strings.Builder
 			cmd.Stdout = &stdout
 			cmd.Stderr = &stderr
+			logger.Info("running actual command")
 			if err := cmd.Run(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
 
+			logger.Info("after nexflow command run")
+
+			logger.Info("starting cleanup")
 			// cleanup files
 			err = os.RemoveAll(inputDir)
 			if err != nil {
@@ -214,6 +219,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			log.Printf("Dir %s deleted", outputDir)
 
+			logger.Info("starting message deletion")
 			// delete message
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 				QueueUrl:      &queueUrl,
