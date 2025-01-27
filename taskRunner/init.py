@@ -4,6 +4,7 @@ import sys
 
 from api import AuthenticationClient, WorkflowInstanceClient
 from config import Config
+from datetime import datetime, timezone
 
 def main():
     config = Config()
@@ -17,6 +18,9 @@ def main():
 
     workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
     workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
+
+    now = datetime.now(timezone.utc).timestamp()
+    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, workflow_instance_id, 'STARTED', now, session_token)
 
     print(json.dumps(workflow_instance["workflow"]))
 

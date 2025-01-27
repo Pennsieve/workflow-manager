@@ -11,6 +11,7 @@ import sys
 from api import AuthenticationClient, WorkflowInstanceClient
 from boto3 import client as boto3_client
 from config import Config
+from datetime import datetime, timezone
 
 logger = logging.getLogger('WorkflowManager')
 
@@ -35,6 +36,7 @@ def main():
 
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)
+    workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
 
     ecs_client = boto3_client("ecs", region_name=config.REGION)
     sts_client = boto3_client("sts")
@@ -107,9 +109,9 @@ def main():
                 'value': config.UPLOAD_BUCKET
             }, 
         ]
-                
+
         if 'params' in app:
-            application_params = app['params']        
+            application_params = app['params']
             for key, value in application_params.items():
                 new_param = {
                     'name': f'{key}'.upper(),
@@ -124,13 +126,15 @@ def main():
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
 
+            now = datetime.now(timezone.utc).timestamp()
             task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, command)
+            workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
-            # gather log related inf
+            # gather log related info
             task_id = container_task_arn.split("/")[2]
-            log_stream_name = "ecs/{0}/{1}".format(container_name, task_id) 
+            log_stream_name = "ecs/{0}/{1}".format(container_name, task_id)
             log_group_name = get_log_group_name(ecs_client, config, task_definition_name)
 
             with open("{0}/processors.csv".format(workspace_directory), 'a', newline='') as csvfile:
@@ -144,10 +148,13 @@ def main():
             sync_logs(sts_client, config, integration_id, workspace_directory)
             exit_code = poll_task(ecs_client, config, task_arn)
 
+            now = datetime.now(timezone.utc).timestamp()
             if exit_code == 0:
-                logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
+                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
+                logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
             else:
-                logger.error("error: container_name={0},a:pplication_type={1}".format(container_name, application_type))
+                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'FAILED', now, session_token)
+                logger.error("error: container_name={0}, application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 
     logger.info("fargate task has stopped: " + task_definition_name)

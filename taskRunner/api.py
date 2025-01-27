@@ -101,3 +101,33 @@ class WorkflowInstanceClient:
         except Exception as e:
             log.error(f"failed to update workflow instance with error: {e}")
             raise e
+
+    def put_workflow_instance_status(self, workflow_instance_id, processor_id, status, timestamp, session_token):
+        url = f"{self.api_host}/workflows/instances/{workflow_instance_id}/status"
+
+        headers = {
+            "Content-Type": 'application/json',
+            "Authorization": f"Bearer {session_token}"
+        }
+
+        request_body = {
+            "uuid": f"{processor_id}",
+            "status": f"{status}",
+            "timestamp": int(timestamp),
+        }
+
+        try:
+            response = requests.put(url, json=request_body, headers=headers)
+            response.raise_for_status()
+            response_body = response.json()
+
+            return response_body
+        except requests.HTTPError as e:
+            log.error(f"failed to update workflow instance status with error: {e}")
+            raise e
+        except json.JSONDecodeError as e:
+            log.error(f"failed to decode update workflow instance status response with error: {e}")
+            raise e
+        except Exception as e:
+            log.error(f"failed to update workflow instance status with error: {e}")
+            raise e

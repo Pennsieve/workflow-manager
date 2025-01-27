@@ -18,6 +18,7 @@ def main():
 
     session_token = auth_client.authenticate(api_key, api_secret)
     completed_at = datetime.now(timezone.utc)
+    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, workflow_instance_id, 'SUCCEEDED', completed_at.timestamp(), session_token)
     response_body = workflow_instance_client.put_workflow_instance(workflow_instance_id, completed_at, session_token)
 
     print(json.dumps(response_body))
