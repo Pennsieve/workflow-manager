@@ -23,14 +23,9 @@ process InitWorkflow {
         stdout
 
     script:
-    if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/init.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
-        """
-    else
-        """
-        python3.9 /service/taskRunner/init_local.py
-        """
+    """
+    python3.9 /service/taskRunner/init.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+    """
 }
 
 process MultiStageWorkflow {
@@ -44,15 +39,9 @@ process MultiStageWorkflow {
         stdout
 
     script:
-    if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir ${params.workspaceDir}
-        """
-    else
-        """
-        echo "running local multi-stage-processor\n"
-        python3.9 /service/taskRunner/multi_stage_local.py '$wf' ${params.workspaceDir}
-        """
+    """
+    python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir ${params.workspaceDir}
+    """
 }
 
 process FinaliseWorkflow {
@@ -66,14 +55,9 @@ process FinaliseWorkflow {
         stdout
 
     script:
-    if ("$ENVIRONMENT" != 'LOCAL')
-        """
-        python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
-        """
-    else
-        """
-        python3.9 /service/taskRunner/finalise_local.py
-        """
+    """
+    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+    """
 }
 
 workflow {
