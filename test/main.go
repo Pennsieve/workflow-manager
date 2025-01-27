@@ -106,8 +106,6 @@ func main() {
 
 	//sqsSvc := sqs.NewFromConfig(cfg)
 
-	var wg sync.WaitGroup
-
 loop:
 	for {
 		select {
@@ -116,7 +114,7 @@ loop:
 			cancel() // cancel context
 
 		default:
-			_, err := processSQS(ctx, queueUrl, logger, &wg)
+			_, err := processSQS(ctx, queueUrl, logger)
 
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
@@ -139,7 +137,7 @@ type MsgType struct {
 	Cancel        bool   `json:"cancel"`
 }
 
-func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger, wg *sync.WaitGroup) (bool, error) {
+func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger) (bool, error) {
 	//input := &sqs.ReceiveMessageInput{
 	//	QueueUrl:            &queueUrl,
 	//	MaxNumberOfMessages: 1,
@@ -267,7 +265,6 @@ func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger, wg *s
 	doneChannel := make(chan *CommandStatusInfo)
 
 	for _, msg := range resp.Messages {
-		wg.Add(1)
 
 		var newMsg MsgType
 		id := *msg.MessageId
@@ -285,12 +282,10 @@ func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger, wg *s
 			logger.Info("Received Kill signal")
 
 			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
-			wg.Done()
 			continue
 		}
 
 		go func(msg types.Message) {
-			defer wg.Done()
 			logger.Info("Initializing workspace ...")
 
 			integrationID := newMsg.IntegrationID
@@ -428,7 +423,6 @@ func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger, wg *s
 		}(msg)
 
 	}
-	wg.Wait()
 	return true, nil
 }
 
