@@ -32,7 +32,7 @@ def main():
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
 
-    logger.info("running task runner for workflow instance ID: ", integration_id)
+    logger.info("running task runner for workflow instance ID={0}".format(integration_id))
 
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)

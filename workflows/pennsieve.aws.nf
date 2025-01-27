@@ -15,10 +15,7 @@ params.outputDir = "$BASE_DIR/output/${params.integrationID}"
 
 process InitWorkflow {
     debug true
-    
-    input:
-        val x
-        val y
+
     output:
         stdout
 
@@ -30,7 +27,7 @@ process InitWorkflow {
 
 process MultiStageWorkflow {
     debug true
-    
+
     input:
         val inputDir
         val outputDir
@@ -40,7 +37,7 @@ process MultiStageWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/multi_stage.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} '$wf' $inputDir $outputDir ${params.workspaceDir}
+    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.apiKey}' '${params.apiSecret}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}'
     """
 }
 
@@ -48,8 +45,6 @@ process FinaliseWorkflow {
     debug true
     
     input:
-        val x
-        val y
         val wf
     output:
         stdout
@@ -63,12 +58,10 @@ process FinaliseWorkflow {
 workflow {
     input_ch = Channel.of(params.inputDir)
     output_ch = Channel.of(params.outputDir)
-    key_ch = Channel.of(params.apiKey)
-    secret_ch = Channel.of(params.apiSecret)
 
-    init_ch = InitWorkflow(key_ch, secret_ch)
+    init_ch = InitWorkflow()
     wf_ch = MultiStageWorkflow(input_ch, output_ch, init_ch)
-    FinaliseWorkflow(key_ch, secret_ch, wf_ch)
+    FinaliseWorkflow(wf_ch)
 }
 
 workflow.onComplete {
