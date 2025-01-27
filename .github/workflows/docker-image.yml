@@ -8,18 +8,16 @@ on:
     
 jobs:
   read-tag:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tag: ${{ steps.read-tag.outputs.tag }}
     steps:
       - name: Read tag
         id: read-tag
-        shell: bash  # Needed so that variable expansion operators work properly:
-        run: |
-          echo "::set-output name=tag::${{ github.ref_name }}"
+        run: echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [read-tag]
     steps:
     - uses: actions/checkout@v4
@@ -35,4 +33,4 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: pennsieve/workflow-manager:${{needs.read-tag.outputs.tag}}, pennsieve/workflow-manager:latest
+        tags: pennsieve/workflow-manager:${{needs.read-tag.outputs.TAG}}, pennsieve/workflow-manager:latest
