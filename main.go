@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 
@@ -29,8 +30,9 @@ import (
 )
 
 const (
-	visibilityTimeout = 4320 * 10
-	waitingTimeout    = 20
+	visibilityTimeout              = 4320 * 10
+	waitingTimeout                 = 20
+	WorkflowInstanceStatusCanceled = "CANCELED"
 )
 
 type CommandStatusInfo struct {
@@ -47,10 +49,7 @@ func main() {
 
 	logger.Info("Welcome to the WorkflowManager")
 
-	baseDir := os.Getenv("BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/mnt/efs"
-	}
+	baseDir := getBaseDir()
 
 	// create output directory and set permissions
 	err := os.Chdir(baseDir)
@@ -81,6 +80,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = os.MkdirAll("pids", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("pids", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
@@ -95,19 +105,6 @@ func main() {
 	log.Printf("QUEUE_URL: %s", queueUrl)
 
 	sqsSvc := sqs.NewFromConfig(cfg)
-
-	// Tacking file for PID, IntegrationID
-	csvFile, err := os.Create(filepath.Join(baseDir, "pid_tracking.csv"))
-	if err != nil {
-		logger.Info("Error creating CSV file:", err)
-	}
-
-	defer csvFile.Close()
-
-	csvWriter := csv.NewWriter(csvFile)
-	defer csvWriter.Flush()
-
-	csvWriter.Write([]string{"IntegrationID", "PID"})
 
 	var wg sync.WaitGroup
 
@@ -177,11 +174,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
 
-		// If a message comes in with new key Cancel, find the process and kill it
+		var fileMutex sync.Mutex
 		if newMsg.Cancel == true {
-			// TODO: Set cancelling status immediately first
-			var fileMutex sync.Mutex
-			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger)
+			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
 			wg.Done()
 			continue
 		}
@@ -191,10 +186,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			logger.Info("Initializing workspace ...")
 
 			integrationID := newMsg.IntegrationID
-			baseDir := os.Getenv("BASE_DIR")
-			if baseDir == "" {
-				baseDir = "/mnt/efs"
-			}
+			baseDir := getBaseDir()
 
 			// create workspace sub-directories
 			err := os.Chdir(baseDir)
@@ -251,18 +243,34 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// Save PID to file
 			pid := cmd.Process.Pid
-			csvFile, err := os.OpenFile(filepath.Join(baseDir, "pid_tracking.csv"), os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-			csvWriter := csv.NewWriter(csvFile)
 
-			err = csvWriter.Write([]string{integrationID, fmt.Sprintf("%d", pid)})
+			fileMutex.Lock()
+			defer fileMutex.Unlock()
+			pidFile, err := os.OpenFile(filepath.Join(baseDir, "pids", integrationID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+			defer pidFile.Close()
+
 			if err != nil {
-				logger.Info("Could not write to PID file")
+				fmt.Printf("Error locking file: %v\n", err)
+				return
 			}
-			csvWriter.Flush()
+
+			_, err = pidFile.WriteString(strconv.Itoa(pid))
+			if err != nil {
+				fmt.Printf("Error writing to file: %v\n", err)
+				return
+			}
 
 			err = cmd.Wait()
 			if err != nil {
-				logger.Info(fmt.Sprintf("Error waiting for nextflow command %v. PID: %d", err, pid))
+				var exiterr *exec.ExitError
+				if errors.As(err, &exiterr) {
+					if exiterr.ExitCode() == -1 {
+						logger.Info("Likely kill signal received:", "status code", exiterr.ExitCode())
+					} else {
+						logger.Info("Abnormal Exit", "status code", exiterr.ExitCode())
+					}
+
+				}
 			}
 
 			// Report work done
@@ -279,21 +287,21 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		go func(msg types.Message) {
 			for cmdInfo := range doneChannel {
 				// Delete input and output directories after the command completes
-				logger.Info("Clean up files for (IntegrationID: %s)\n", cmdInfo.IntegrationID)
+				logger.Info("Clean up files for IntegrationID", "IntegrationID", cmdInfo.IntegrationID)
 
 				err = os.RemoveAll(cmdInfo.InputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				logger.Info("dir %s deleted", cmdInfo.InputDir)
+				logger.Info("dir deleted", "InputDir", cmdInfo.InputDir)
 
 				err = os.RemoveAll(cmdInfo.OutputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				logger.Info("Dir %s deleted", cmdInfo.OutputDir)
+				logger.Info("Dir deleted", "OutputDir", cmdInfo.OutputDir)
 
 				// delete message
 				_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
@@ -305,7 +313,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					logger.Error("error deleting message from SQS",
 						slog.String("error", err.Error()))
 				}
-				logger.Info("message id %s is deleted from queue", id)
+				logger.Info("message id deleted from queue", "id", id)
 			}
 		}(msg)
 
@@ -316,72 +324,59 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 	return true, nil
 }
 
-func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger) {
+func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger, newMsg MsgType) {
 	lock.Lock()
 	defer lock.Unlock()
 	baseDir := getBaseDir()
 
+	logger.Info("Attempt to kill process for integration", "integration", integrationID)
+
 	file, err := os.Open(filepath.Join(baseDir, "pid_tracking.csv"))
 	if err != nil {
-		logger.Info("Error opening file: %v\n", err)
+		logger.Info("Error opening file", "error", err)
 		return
 	}
 	defer file.Close()
 
-	reader := csv.NewReader(file)
-	rows, err := reader.ReadAll()
+	content, err := readFile(baseDir, integrationID)
 	if err != nil {
-		logger.Info("Error reading CSV: %v\n", err)
+		fmt.Println("Error reading file:", err)
 		return
 	}
+	pidString := strings.TrimSpace(string(content))
 
-	// Creat dict to have e asy access to PIDs
-	dataMap := make(map[string]string)
-	for i, row := range rows {
-		if i == 0 {
-			// skip header row
-			continue
-		}
-		if len(row) >= 2 {
-			dataMap[row[0]] = row[1]
-		}
-
-		if pidString, exists := dataMap[integrationID]; exists {
-			logger.Info("Killing integration %s with PID %s\n", integrationID, pidString)
-			pid, err := strconv.Atoi(pidString)
-			if err != nil {
-				logger.Error("Error converting string to int: %v\n", err)
-				return
-			}
-			// kill -9 [PID]
-			err = syscall.Kill(pid, syscall.SIGKILL)
-			if err != nil {
-				logger.Error("Failed to kill process %d: %v\n", pid, err)
-				return
-			}
-			// Kill running ECS task
-			cancelledAllTasks := killECS(ctx, logger, integrationID)
-			if cancelledAllTasks {
-				updateIntegration("CANCELED", integrationID)
-			}
-
-			//cleanPidFile()
-
-		} else {
-			fmt.Printf("IntegrationID %s not found\n", integrationID)
+	logger.Info("Killing integration", "IntegrationID", integrationID, "PID", pidString)
+	pid, err := strconv.Atoi(pidString)
+	if err != nil {
+		logger.Error("Error converting string to int: %v\n", err)
+		return
+	}
+	// kill -9 [PID]
+	err = syscall.Kill(pid, syscall.SIGKILL)
+	if err != nil {
+		logger.Error("Failed to kill process", "PID", pid, "error", err)
+		return
+	}
+	logger.Info("Killed process", "pid", pid, "integration", integrationID)
+	// Stop running ECS task
+	cancelledAllTasks := stopECSTasks(ctx, logger, integrationID)
+	if cancelledAllTasks {
+		err = updateIntegration(WorkflowInstanceStatusCanceled, integrationID, logger, newMsg)
+		if err != nil {
+			logger.Info("Failed to update integration", "error", err)
+			return
 		}
 	}
+
 }
 
-func killECS(ctx context.Context, logger *slog.Logger, integrationID string) bool {
-	//var cancelledTasks []string
-	//var integrationId = os.Getenv("INTEGRATION_ID")
+func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string) bool {
 	var TaskArn = 7
 	var ClusterName = 8
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		logger.Error("LoadDefaultConfig:" + err.Error())
+		logger.Error("LoadDefaultConfigError", "error", err.Error())
 		return false
 	}
 
@@ -391,7 +386,7 @@ func killECS(ctx context.Context, logger *slog.Logger, integrationID string) boo
 	baseDir := getBaseDir()
 	file, err := os.Open(filepath.Join(baseDir, "processors.csv"))
 	if err != nil {
-		logger.Info("Error opening file: %v\n", err)
+		logger.Info("Error opening file", "error", err)
 		return false
 	}
 	defer file.Close()
@@ -410,16 +405,28 @@ func killECS(ctx context.Context, logger *slog.Logger, integrationID string) boo
 
 			_, err = client.StopTask(context.TODO(), input)
 			if err != nil {
-				logger.Error("failed to stop task, %v", err)
-				return false
+				logger.Error("failed to stop task", "integrationID", integrationID, "error", err)
 			}
 		}
 	}
 	return true
 }
 
-func updateIntegration(status string, integrationID string) {
-	url := fmt.Sprintf("https://app.pennsieve.io/workflows/instances/%s/status", integrationID)
+func updateIntegration(status string, integrationID string, logger *slog.Logger, newMsg MsgType) error {
+
+	env := strings.ToLower(os.Getenv("ENVIRONMENT"))
+	var pennsieveHost string
+	if env == "dev" || env == "local" {
+		pennsieveHost = "https://api2.pennsieve.net"
+	} else {
+		pennsieveHost = "https://api2.pennsieve.io"
+	}
+	accessToken, err := getAccessToken(pennsieveHost, newMsg.ApiKey, newMsg.ApiSecret)
+	if err != nil {
+		logger.Info("Could not access Session token", "error", err)
+	}
+
+	url := fmt.Sprintf("%s/workflows/instances/%s/status", pennsieveHost, integrationID)
 
 	jsonData := fmt.Sprintf(`{
 		"uuid": %s,
@@ -429,21 +436,25 @@ func updateIntegration(status string, integrationID string) {
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(jsonData)))
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
+		logger.Info("Error creating request", "error", err)
+		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Println("Error making request:", err)
-		return
+		logger.Info("Error making request", "error", err)
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		logger.Info("Request failed with status code", "status code", resp.StatusCode)
+	} else {
+		logger.Info("Updated integration")
 	}
 	defer resp.Body.Close()
-}
-
-func cleanPidFile() {
-	// TODO: House keeping, clean up PID file
+	return nil
 }
 
 func getBaseDir() string {
@@ -452,4 +463,73 @@ func getBaseDir() string {
 		baseDir = "/mnt/efs"
 	}
 	return baseDir
+}
+
+func getAccessToken(pennsieveHost string, apiKey string, apiSecret string) (string, error) {
+
+	var sessionToken string
+
+	resp, err := http.Get(fmt.Sprintf("%s/authentication/cognito-config", pennsieveHost))
+	if err != nil {
+		return sessionToken, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return sessionToken, errors.New(fmt.Sprintf("invalid status code: %s", resp.StatusCode))
+	}
+
+	var cognitoConfig struct {
+		TokenPool struct {
+			AppClientId string `json:"appClientId"`
+		} `json:"tokenPool"`
+		Region string `json:"region"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&cognitoConfig)
+	if err != nil {
+		return sessionToken, err
+	}
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(cognitoConfig.Region))
+	if err != nil {
+		return sessionToken, err
+	}
+
+	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
+
+	input := &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: "USER_PASSWORD_AUTH",
+		AuthParameters: map[string]string{
+			"USERNAME": apiKey,
+			"PASSWORD": apiSecret,
+		},
+		ClientId: aws.String(cognitoConfig.TokenPool.AppClientId),
+	}
+
+	authResp, err := cognitoClient.InitiateAuth(context.TODO(), input)
+	if err != nil {
+		return sessionToken, err
+	}
+
+	sessionToken = aws.ToString(authResp.AuthenticationResult.AccessToken)
+	fmt.Println("Session Token:", sessionToken)
+
+	return sessionToken, nil
+}
+
+func readFile(baseDir, integrationID string) ([]byte, error) {
+	filePath := filepath.Join(baseDir, "pids", integrationID)
+	for {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("error reading file: %w", err)
+			}
+		} else if len(content) > 0 {
+			// Return content if the file is not empty
+			return content, nil
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
 }

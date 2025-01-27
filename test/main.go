@@ -1,59 +1,16 @@
-//package main
-//
-//import (
-//	"fmt"
-//	"log"
-//	"log/slog"
-//	"os"
-//	"os/exec"
-//	"strings"
-//)
-//
-//func main() {
-//	programLevel := new(slog.LevelVar)
-//	logger := slog.New(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: programLevel}))
-//	slog.SetDefault(logger)
-//
-//	log.Println("Welcome to the WorkflowManager")
-//	log.Println("Starting pipeline")
-//	integrationID := os.Getenv("INTEGRATION_ID")
-//	apiKey := os.Getenv("PENNSIEVE_API_KEY")
-//	apiSecret := os.Getenv("PENNSIEVE_API_SECRET")
-//
-//	// run pipeline
-//	workspaceDir := "/service/workflows"
-//	cmd := exec.Command("nextflow",
-//		"-log", "/service/workflows/nextflow.log",
-//		"run", "./workflows/pennsieve.aws.nf",
-//		"-w", workspaceDir,
-//		"-ansi-log", "false",
-//		"--integrationID", integrationID,
-//		"--apiKey", apiKey,
-//		"--apiSecret", apiSecret,
-//		"--workspaceDir", workspaceDir)
-//	cmd.Dir = "/service"
-//	var stdout strings.Builder
-//	var stderr strings.Builder
-//	cmd.Stdout = &stdout
-//	cmd.Stderr = &stderr
-//	if err := cmd.Run(); err != nil {
-//		logger.Error(err.Error(),
-//			slog.String("error", stderr.String()))
-//	}
-//	fmt.Println(stdout.String())
-//}
-
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/ecs"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -62,13 +19,20 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
+
+	"github.com/aws/aws-sdk-go-v2/service/ecs"
 )
 
 const (
-	visibilityTimeout = 4320 * 10
-	waitingTimeout    = 20
+	visibilityTimeout              = 4320 * 10
+	waitingTimeout                 = 20
+	WorkflowInstanceStatusCanceled = "CANCELED"
 )
 
 type CommandStatusInfo struct {
@@ -85,10 +49,7 @@ func main() {
 
 	logger.Info("Welcome to the WorkflowManager")
 
-	baseDir := os.Getenv("BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/service"
-	}
+	baseDir := getBaseDir()
 
 	// create output directory and set permissions
 	err := os.Chdir(baseDir)
@@ -119,7 +80,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	_, err = config.LoadDefaultConfig(context.Background())
+	err = os.MkdirAll("pids", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("pids", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
+	//cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
 	}
@@ -132,20 +104,7 @@ func main() {
 	queueUrl := os.Getenv("SQS_URL")
 	log.Printf("QUEUE_URL: %s", queueUrl)
 
-	// Tacking file for PID, IntegrationID
-	csvFile, err := os.Create(filepath.Join(baseDir, "pid_tracking.csv"))
-	if err != nil {
-		logger.Info("Error creating CSV file:", err)
-	}
-
-	defer csvFile.Close()
-
-	csvWriter := csv.NewWriter(csvFile)
-	defer csvWriter.Flush()
-
-	csvWriter.Write([]string{"IntegrationID", "PID"})
-
-	testMessage := []int{1}
+	//sqsSvc := sqs.NewFromConfig(cfg)
 
 	var wg sync.WaitGroup
 
@@ -157,7 +116,7 @@ loop:
 			cancel() // cancel context
 
 		default:
-			_, err := processSQS(ctx, testMessage, logger, &wg)
+			_, err := processSQS(ctx, queueUrl, logger, &wg)
 
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
@@ -180,35 +139,164 @@ type MsgType struct {
 	Cancel        bool   `json:"cancel"`
 }
 
-func processSQS(ctx context.Context, messages []int, logger *slog.Logger, wg *sync.WaitGroup) (bool, error) {
+func processSQS(ctx context.Context, queueUrl string, logger *slog.Logger, wg *sync.WaitGroup) (bool, error) {
+	//input := &sqs.ReceiveMessageInput{
+	//	QueueUrl:            &queueUrl,
+	//	MaxNumberOfMessages: 1,
+	//	VisibilityTimeout:   visibilityTimeout,
+	//	WaitTimeSeconds:     waitingTimeout, // use long polling
+	//}
 
-	// Track completed commands
+	//resp, err := sqsSvc.ReceiveMessage(ctx, input)
+	regularMsg := MsgType{
+		IntegrationID: "54321",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	regularMsg1 := MsgType{
+		IntegrationID: "101010",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	regularMsg2 := MsgType{
+		IntegrationID: "2468",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	regularMsg3 := MsgType{
+		IntegrationID: "102030",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	regularMsg4 := MsgType{
+		IntegrationID: "9876",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	regularMsg5 := MsgType{
+		IntegrationID: "1234",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        false,
+	}
+	cancelMsg := MsgType{
+		IntegrationID: "54321",
+		ApiKey:        "api-key-xyz",
+		ApiSecret:     "api-secret-abc",
+		Cancel:        true,
+	}
+	regularMsgJson, _ := json.Marshal(regularMsg)
+	regularMsgJson1, _ := json.Marshal(regularMsg1)
+	regularMsgJson2, _ := json.Marshal(regularMsg2)
+	regularMsgJson3, _ := json.Marshal(regularMsg3)
+	regularMsgJson4, _ := json.Marshal(regularMsg4)
+	regularMsgJson5, _ := json.Marshal(regularMsg5)
+	cancelMsgJson, _ := json.Marshal(cancelMsg)
+	resp := &sqs.ReceiveMessageOutput{
+		Messages: []types.Message{
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson1)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson2)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson3)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson4)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("2b3c4d5e-6789-01ab-cdef-EXAMPLE22222"),
+				ReceiptHandle: aws.String("AQEBzJnKyrHigUMZj6rYigCgxlaS3SLy1b..."),
+				Body:          aws.String(string(regularMsgJson5)),
+				Attributes: map[string]string{
+					"SenderId": "987654321098",
+				},
+			},
+			{
+				MessageId:     aws.String("3c4d5e6f-7890-12ab-cdef-EXAMPLE33333"),
+				ReceiptHandle: aws.String("AQEBxKnKyrHigUMZj6rYigCgxlaS3SLy2c..."),
+				Body:          aws.String(string(cancelMsgJson)),
+				Attributes: map[string]string{
+					"SenderId": "112233445566",
+				},
+			},
+		},
+	}
+
+	log.Printf("received messages: %v", len(resp.Messages))
+	if len(resp.Messages) == 0 {
+		return false, nil
+	}
+
+	// Track completed nextflow tasks
 	doneChannel := make(chan *CommandStatusInfo)
 
-	for _, _ = range messages {
+	for _, msg := range resp.Messages {
 		wg.Add(1)
 
 		var newMsg MsgType
+		id := *msg.MessageId
 
-		if newMsg.Cancel == true {
-			var fileMutex sync.Mutex
-			killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger)
+		err := json.Unmarshal([]byte(*msg.Body), &newMsg)
+		if err != nil {
+			return false, fmt.Errorf("error unmarshalling %w", err)
 		}
 
-		go func() {
+		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
+		log.Printf("message cancel status %b", newMsg.Cancel)
+
+		var fileMutex sync.Mutex
+		if newMsg.Cancel == true {
+			logger.Info("Received Kill signal")
+
+			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
+			wg.Done()
+			continue
+		}
+
+		go func(msg types.Message) {
 			defer wg.Done()
 			logger.Info("Initializing workspace ...")
 
-			integrationID := os.Getenv("INTEGRATION_ID")
-			apiKey := os.Getenv("PENNSIEVE_API_KEY")
-			apiSecret := os.Getenv("PENNSIEVE_API_SECRET")
+			integrationID := newMsg.IntegrationID
+			baseDir := getBaseDir()
 
-			baseDir := os.Getenv("BASE_DIR")
-			if baseDir == "" {
-				baseDir = "/service"
-			}
-
-			// create workspace subdirectories
+			// create workspace sub-directories
 			err := os.Chdir(baseDir)
 			if err != nil {
 				logger.Error(err.Error())
@@ -232,7 +320,7 @@ func processSQS(ctx context.Context, messages []int, logger *slog.Logger, wg *sy
 			}
 
 			// workspaceDir
-			workspaceDir := "/service/workflows/"
+			workspaceDir := fmt.Sprintf("%s/workspace/%s", baseDir, integrationID)
 			err = os.MkdirAll(outputDir, 0777)
 			if err != nil {
 				logger.Error(err.Error())
@@ -241,172 +329,174 @@ func processSQS(ctx context.Context, messages []int, logger *slog.Logger, wg *sy
 
 			// run analysis pipeline
 			logger.Info("Starting analysis pipeline")
-			logger.Info(workspaceDir)
-			logger.Info(integrationID)
-			logger.Info(apiKey)
-			logger.Info(workspaceDir)
 			cmd := exec.Command("nextflow",
 				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
 				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
-				"--apiKey", apiKey,
-				"--apiSecret", apiSecret,
+				"--apiKey", newMsg.ApiKey,
+				"--apiSecret", newMsg.ApiSecret,
 				"--workspaceDir", workspaceDir)
-
-			//cmd = exec.Command("nextflow",
-			//	"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
-			//	"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
-			//)
 			cmd.Dir = "/service"
-			var stdout, stderr strings.Builder
+			var stdout strings.Builder
+			var stderr strings.Builder
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+
 			// cmd.Start() to stop blocking and not wait compared to cmd.Run()
 			if err := cmd.Start(); err != nil {
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
 
+			logger.Info("Nextflow command output", "stdout", stdout.String())
+			logger.Info("Nextflow command output", "stdout", stderr.String())
+			// Save PID to file
 			pid := cmd.Process.Pid
-			csvFile, err := os.OpenFile(filepath.Join(baseDir, "pid_tracking.csv"), os.O_APPEND|os.O_WRONLY, os.ModeAppend)
-			csvWriter := csv.NewWriter(csvFile)
+			fileMutex.Lock()
+			defer fileMutex.Unlock()
+			pidFile, err := os.OpenFile(filepath.Join(baseDir, "pids", integrationID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+			defer pidFile.Close()
 
-			err = csvWriter.Write([]string{integrationID, fmt.Sprintf("%d", pid)})
 			if err != nil {
-				logger.Info("Could not write to PID file")
-			}
-			csvWriter.Flush()
-
-			if err := cmd.Wait(); err != nil {
-				logger.Error("Failed to wait for command", slog.String("error", err.Error()))
+				fmt.Printf("Error locking file: %v\n", err)
+				return
 			}
 
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
-			logger.Info("Command output", slog.String("stdout", stdout.String()), slog.String("stderr", stderr.String()))
-
-			logger.Info(fmt.Sprintf("Command finished waiting with status %v", err))
+			_, err = pidFile.WriteString(strconv.Itoa(pid))
 			if err != nil {
-				logger.Info(fmt.Sprintf("Error waiting for nextflow command: %v. PID: %d", err, pid))
+				fmt.Printf("Error writing to file: %v\n", err)
+				return
 			}
 
-			logger.Info(fmt.Sprintf("Command finished waiting with status %v", err))
+			logger.Info("Saved pid to file", "file", filepath.Join(baseDir, "pids", integrationID))
+
+			err = cmd.Wait()
+			if err != nil {
+				var exiterr *exec.ExitError
+				if errors.As(err, &exiterr) {
+					if exiterr.ExitCode() == -1 {
+						logger.Info("Likely kill signal received:", "status code", exiterr.ExitCode())
+					} else {
+						logger.Info("Abnormal Exit", "status code", exiterr.ExitCode())
+					}
+
+				}
+			}
+			// Report work done
 			doneChannel <- &CommandStatusInfo{
 				IntegrationID: integrationID,
 				PID:           pid,
 				InputDir:      inputDir,
 				OutputDir:     outputDir,
 			}
-		}()
+		}(msg)
 
-		// Clean up go func, waits for command to complete then cleans up
-		go func() {
+		// Receive complete messages when nextflow task is done
+		// Then clean up input / output files
+		go func(msg types.Message) {
 			for cmdInfo := range doneChannel {
 				// Delete input and output directories after the command completes
-				fmt.Printf("Cleaning up for PID %d (IntegrationID: %s)\n", cmdInfo.PID, cmdInfo.IntegrationID)
-				os.RemoveAll(cmdInfo.InputDir)
-				os.RemoveAll(cmdInfo.OutputDir)
+				logger.Info("Clean up files for IntegrationID", "IntegrationID", cmdInfo.IntegrationID)
 
-				// WAIT
-				// Split out into go routine
-				// cleanup files
-				err := os.RemoveAll(cmdInfo.InputDir)
+				err = os.RemoveAll(cmdInfo.InputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				log.Printf("Input Dir %s deleted", cmdInfo.InputDir)
+				logger.Info("dir deleted", "InputDir", cmdInfo.InputDir)
 
 				err = os.RemoveAll(cmdInfo.OutputDir)
 				if err != nil {
 					logger.Error("error deleting files",
 						slog.String("error", err.Error()))
 				}
-				log.Printf("Output Dir %s deleted", cmdInfo.OutputDir)
+				logger.Info("Dir deleted", "OutputDir", cmdInfo.OutputDir)
+
+				// delete message
+				//_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+				//	QueueUrl:      &queueUrl,
+				//	ReceiptHandle: msg.ReceiptHandle,
+				//})
 
 				if err != nil {
 					logger.Error("error deleting message from SQS",
 						slog.String("error", err.Error()))
 				}
+				logger.Info("message id deleted from queue", "id", id)
 			}
-		}()
+		}(msg)
+
 	}
 	wg.Wait()
-	close(doneChannel)
 	return true, nil
 }
 
-func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger) {
+func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger, newMsg MsgType) {
 	lock.Lock()
 	defer lock.Unlock()
 	baseDir := getBaseDir()
+	logger.Info("Attempt to kill process for integration", "integration", integrationID)
 
-	file, err := os.Open(filepath.Join(baseDir, "pid_tracking.csv"))
+	//pidFile, err := os.OpenFile(filepath.Join(baseDir, "pids", integrationID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+	//defer pidFile.Close()
+	//
+	//err = syscall.Flock(int(pidFile.Fd()), syscall.LOCK_EX)
+	//if err != nil {
+	//	fmt.Printf("Error locking file: %v\n", err)
+	//	return
+	//}
+	//defer syscall.Flock(int(pidFile.Fd()), syscall.LOCK_UN)
+
+	content, err := readFile(baseDir, integrationID)
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
+		fmt.Println("Error reading file:", err)
 		return
 	}
-	defer file.Close()
+	pidString := strings.TrimSpace(string(content))
 
-	reader := csv.NewReader(file)
-	rows, err := reader.ReadAll()
+	logger.Info("Killing integration", "IntegrationID", integrationID, "PID", pidString)
+	pid, err := strconv.Atoi(pidString)
 	if err != nil {
-		fmt.Printf("Error reading CSV: %v\n", err)
+		logger.Error("Error converting string to int: %v\n", err)
 		return
 	}
-
-	dataMap := make(map[string]string)
-	for i, row := range rows {
-		if i == 0 {
-			// skip header row
-			continue
-		}
-		if len(row) >= 2 {
-			dataMap[row[0]] = row[1]
-		}
-
-		if pidString, exists := dataMap[integrationID]; exists {
-			fmt.Printf("Killing integration %s with PID %s\n", integrationID, pidString)
-			pid, err := strconv.Atoi(pidString)
-			if err != nil {
-				fmt.Printf("Error converting string to int: %v\n", err)
-				return
-			}
-			// kill -9 [PID]
-			err = syscall.Kill(pid, syscall.SIGKILL)
-			if err != nil {
-				fmt.Printf("Failed to kill process %d: %v\n", pid, err)
-				return
-			}
-			// Kill running ECS task
-			killECS(ctx, logger)
-			updateIntegration()
-
-		} else {
-			fmt.Printf("IntegrationID %s not found\n", integrationID)
+	// kill -9 [PID]
+	err = syscall.Kill(pid, syscall.SIGKILL)
+	if err != nil {
+		logger.Error("Failed to kill process", "PID", pid, "error", err)
+		return
+	}
+	logger.Info("Killed process", "pid", pid, "integration", integrationID)
+	// Stop running ECS task
+	cancelledAllTasks := stopECSTasks(ctx, logger, integrationID)
+	if cancelledAllTasks {
+		err = updateIntegration(WorkflowInstanceStatusCanceled, integrationID, logger, newMsg)
+		if err != nil {
+			logger.Info("Failed to update integration", "error", err)
+			return
 		}
 	}
 }
 
-func killECS(ctx context.Context, logger *slog.Logger) []string {
-	var cancelledTasks []string
-	var integrationId = 0
+func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string) bool {
 	var TaskArn = 7
 	var ClusterName = 8
 
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		logger.Error("LoadDefaultConfig:" + err.Error())
-		return []string{}
+		logger.Error("LoadDefaultConfigError", "error", err.Error())
+		return false
 	}
 
 	client := ecs.NewFromConfig(cfg)
 
 	// Get taskArn and ClusterName
 	baseDir := getBaseDir()
-	file, err := os.Open(filepath.Join(baseDir, "pid_tracking.csv"))
+	file, err := os.Open(filepath.Join(baseDir, "processors.csv"))
 	if err != nil {
-		logger.Info("Error opening file: %v\n", err)
-		return cancelledTasks
+		logger.Info("Error opening file", "error", err)
+		return false
 	}
 	defer file.Close()
 
@@ -415,30 +505,140 @@ func killECS(ctx context.Context, logger *slog.Logger) []string {
 
 	// Loop through and stop each task
 	for _, row := range rows {
-		// Call StopTask API
-		input := &ecs.StopTaskInput{
-			Cluster: aws.String(row[ClusterName]),
-			Task:    aws.String(row[TaskArn]),
-		}
+		if row[0] == integrationID {
+			// Call StopTask API
+			input := &ecs.StopTaskInput{
+				Cluster: aws.String(row[ClusterName]),
+				Task:    aws.String(row[TaskArn]),
+			}
 
-		_, err = client.StopTask(context.TODO(), input)
-		if err != nil {
-			logger.Error("failed to stop task, %v", err)
-			return cancelledTasks
+			_, err = client.StopTask(context.TODO(), input)
+			if err != nil {
+				logger.Error("failed to stop task", "integrationID", integrationID, "error", err)
+				return false
+			}
 		}
-		cancelledTasks = append(cancelledTasks, row[integrationId])
 	}
-	return cancelledTasks
-
+	return true
 }
 
-func updateIntegration() {
+func updateIntegration(status string, integrationID string, logger *slog.Logger, newMsg MsgType) error {
 
+	env := strings.ToLower(os.Getenv("ENVIRONMENT"))
+	var pennsieveHost string
+	if env == "dev" || env == "local" {
+		pennsieveHost = "https://api2.pennsieve.net"
+	} else {
+		pennsieveHost = "https://api2.pennsieve.io"
+	}
+	accessToken, err := getAccessToken(pennsieveHost, newMsg.ApiKey, newMsg.ApiSecret)
+	if err != nil {
+		logger.Info("Could not access Session token", "error", err)
+	}
+
+	url := fmt.Sprintf("%s/workflows/instances/%s/status", pennsieveHost, integrationID)
+
+	jsonData := fmt.Sprintf(`{
+		"uuid": %s,
+		"status": %s,
+		"timestamp": %s
+	}`, integrationID, status, time.Now().String())
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(jsonData)))
+	if err != nil {
+		logger.Info("Error creating request", "error", err)
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Info("Error making request", "error", err)
+		return err
+	}
+	if resp.StatusCode != 200 {
+		logger.Info("Request failed with status code", "status code", resp.StatusCode)
+	} else {
+		logger.Info("Updated integration")
+	}
+	defer resp.Body.Close()
+	return nil
 }
+
 func getBaseDir() string {
 	baseDir := os.Getenv("BASE_DIR")
 	if baseDir == "" {
 		baseDir = "/mnt/efs"
 	}
 	return baseDir
+}
+
+func getAccessToken(pennsieveHost string, apiKey string, apiSecret string) (string, error) {
+
+	var sessionToken string
+
+	resp, err := http.Get(fmt.Sprintf("%s/authentication/cognito-config", pennsieveHost))
+	if err != nil {
+		return sessionToken, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return sessionToken, errors.New(fmt.Sprintf("invalid status code: %s", resp.StatusCode))
+	}
+
+	var cognitoConfig struct {
+		TokenPool struct {
+			AppClientId string `json:"appClientId"`
+		} `json:"tokenPool"`
+		Region string `json:"region"`
+	}
+	err = json.NewDecoder(resp.Body).Decode(&cognitoConfig)
+	if err != nil {
+		return sessionToken, err
+	}
+
+	cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion(cognitoConfig.Region))
+	if err != nil {
+		return sessionToken, err
+	}
+
+	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
+
+	input := &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: "USER_PASSWORD_AUTH",
+		AuthParameters: map[string]string{
+			"USERNAME": apiKey,
+			"PASSWORD": apiSecret,
+		},
+		ClientId: aws.String(cognitoConfig.TokenPool.AppClientId),
+	}
+
+	authResp, err := cognitoClient.InitiateAuth(context.TODO(), input)
+	if err != nil {
+		return sessionToken, err
+	}
+
+	sessionToken = aws.ToString(authResp.AuthenticationResult.AccessToken)
+	fmt.Println("Session Token:", sessionToken)
+
+	return sessionToken, nil
+}
+
+func readFile(baseDir, integrationID string) ([]byte, error) {
+	filePath := filepath.Join(baseDir, "pids", integrationID)
+	for {
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return nil, fmt.Errorf("error reading file: %w", err)
+			}
+		} else if len(content) > 0 {
+			// Return content if the file is not empty
+			return content, nil
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
 }
