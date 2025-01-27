@@ -2,9 +2,9 @@ name: Docker Image CI
 
 on:
   push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - '*-test'
+      - '*.*.*'  # Match anything resembling semver
     
 jobs:
   read-tag:
@@ -16,7 +16,7 @@ jobs:
         id: read-tag
         shell: bash  # Needed so that variable expansion operators work properly:
         run: |
-          echo "::set-output name=tag::${{ github.ref_name }}"  # Export just the tag name, e.g. "0.0.1" instead of "refs/tags/0.0.1" as a step output
+          echo "::set-output name=tag::${{ github.ref_name }}"
 
   build:
     runs-on: ubuntu-latest
