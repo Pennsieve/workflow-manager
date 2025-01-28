@@ -32,6 +32,33 @@ def main():
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
 
+    # compute node / workflow manager specific
+    subnet_ids = os.environ['SUBNET_IDS']
+    cluster_name = os.environ['CLUSTER_NAME']
+    security_group = os.environ['SECURITY_GROUP_ID']
+    base_dir = os.environ['BASE_DIR']
+    env = os.environ['ENVIRONMENT']
+    
+    # App specific - params? - defaults on app creation, then overriden on run
+    # session token retrieval should be on the processor(s)
+    pennsieve_host = ""
+    pennsieve_host2 = ""
+    pennsieve_upload_bucket = "" # agent specific
+    pennsieve_agent_home = "/tmp" # agent specific
+
+    if env == "dev":
+        pennsieve_host = "https://api.pennsieve.net"
+        pennsieve_host2 = "https://api2.pennsieve.net"
+        pennsieve_upload_bucket = "pennsieve-dev-uploads-v2-use1"
+    else:
+        pennsieve_host = "https://api.pennsieve.io"
+        pennsieve_host2 = "https://api2.pennsieve.io"
+
+    container_name = ""
+    task_definition_name = ""
+
+
+
     logger.info("running task runner for workflow instance ID={0}".format(integration_id))
 
     config = Config()
@@ -43,7 +70,7 @@ def main():
 
     with open("{0}/processors.csv".format(workspace_directory), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        header = ['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']
+        header = ['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type','task_arn', 'cluster_name']
         writer.writerow(header)
         csvfile.close()
 
@@ -139,7 +166,7 @@ def main():
 
             with open("{0}/processors.csv".format(workspace_directory), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type, task_arn, cluster_name]]
 
                 for row in data:
                     writer.writerow(row)

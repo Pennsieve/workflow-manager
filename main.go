@@ -2,26 +2,29 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
+	"github.com/pennsieve/workflow-manager/helpers"
 	"log"
 	"log/slog"
 	"os"
-	"os/exec"
 	"os/signal"
-	"strings"
 	"syscall"
-
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/sqs"
-	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
-const (
-	visibilityTimeout = 4320 * 10
-	waitingTimeout    = 20
-)
+type SQSProcessor interface {
+	Process(ctx context.Context, queueUrl string) (bool, error)
+}
+
+type AwsSQSProcessor struct {
+	Client *sqs.Client
+	Logger *slog.Logger
+}
+
+func (r *AwsSQSProcessor) Process(ctx context.Context, queueUrl string) (bool, error) {
+	return helpers.ProcessSQS(ctx, r.Client, queueUrl, r.Logger)
+}
 
 func main() {
 	programLevel := new(slog.LevelVar)
@@ -30,46 +33,15 @@ func main() {
 
 	logger.Info("Welcome to the WorkflowManager")
 
-	baseDir := os.Getenv("BASE_DIR")
-	if baseDir == "" {
-		baseDir = "/mnt/efs"
-	}
+	baseDir := helpers.GetBaseDir()
 
-	// create output directory and set permissions
-	err := os.Chdir(baseDir)
+	err := helpers.SetupFolders(baseDir, logger)
 	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
-
-	err = os.MkdirAll("output", 0777)
-	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
-	err = os.Chown("output", 1000, 1000)
-	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
-
-	err = os.MkdirAll("workspace", 0777)
-	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
-	err = os.Chown("workspace", 1000, 1000)
-	if err != nil {
-		logger.Error(err.Error())
-		os.Exit(1)
-	}
-
-	cfg, err := config.LoadDefaultConfig(context.Background())
-	if err != nil {
-		log.Fatalf("LoadDefaultConfig: %v\n", err)
+		logger.Info("Failed to setup folders", "error", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
@@ -77,162 +49,58 @@ func main() {
 	queueUrl := os.Getenv("SQS_URL")
 	log.Printf("QUEUE_URL: %s", queueUrl)
 
-	sqsSvc := sqs.NewFromConfig(cfg)
+	sqsSvc, err := initializeAWS(context.Background())
+	if err != nil {
+		log.Fatalf("Failed to initialize AWS: %v", err)
+	}
+
+	processor := &AwsSQSProcessor{
+		Client: sqsSvc,
+		Logger: logger,
+	}
+
+	// Call run with the real processor
+	if err := run(ctx, processor, queueUrl, logger); err != nil {
+		logger.Error("Service stopped with error", slog.Any("error", err))
+		os.Exit(1)
+	}
+	log.Println("service is safely stopped")
+}
+
+// program while loop
+func run(ctx context.Context, processor SQSProcessor, queueUrl string, logger *slog.Logger) error {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
 loop:
 	for {
 		select {
-		case <-signalChan: // if get SIGTERM
-			log.Println("got SIGTERM signal, cancelling the context")
-			cancel() // cancel context
+		case <-signalChan:
+			logger.Info("Received SIGTERM, stopping service")
+			return nil
 
 		default:
-			_, err := processSQS(ctx, sqsSvc, queueUrl, logger)
-
+			success, err := processor.Process(ctx, queueUrl)
 			if err != nil {
 				if errors.Is(err, context.Canceled) {
-					log.Printf("stop processing, context is cancelled %v", err)
+					logger.Info("Context canceled, stopping processing")
 					break loop
 				}
-
-				log.Fatalf("error processing SQS %v", err)
+				logger.Error("Error processing SQS", slog.Any("error", err))
+				return err
+			}
+			if success {
+				logger.Info("Processed a message successfully")
 			}
 		}
 	}
-	log.Println("service is safely stopped")
-
+	return nil
 }
 
-type MsgType struct {
-	IntegrationID string `json:"integrationId"`
-	ApiKey        string `json:"api_key"`
-	ApiSecret     string `json:"api_secret"`
-}
-
-func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger) (bool, error) {
-	input := &sqs.ReceiveMessageInput{
-		QueueUrl:            &queueUrl,
-		MaxNumberOfMessages: 1,
-		VisibilityTimeout:   visibilityTimeout,
-		WaitTimeSeconds:     waitingTimeout, // use long polling
-	}
-
-	resp, err := sqsSvc.ReceiveMessage(ctx, input)
-
+func initializeAWS(ctx context.Context) (*sqs.Client, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return false, fmt.Errorf("error receiving message %w", err)
+		return nil, err
 	}
-
-	log.Printf("received messages: %v", len(resp.Messages))
-	if len(resp.Messages) == 0 {
-		return false, nil
-	}
-
-	for _, msg := range resp.Messages {
-		var newMsg MsgType
-		id := *msg.MessageId
-
-		err := json.Unmarshal([]byte(*msg.Body), &newMsg)
-		if err != nil {
-			return false, fmt.Errorf("error unmarshalling %w", err)
-		}
-
-		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
-
-		go func(msg types.Message) {
-			logger.Info("Initializing workspace ...")
-
-			integrationID := newMsg.IntegrationID
-			baseDir := os.Getenv("BASE_DIR")
-			if baseDir == "" {
-				baseDir = "/mnt/efs"
-			}
-
-			// create workspace sub-directories
-			err := os.Chdir(baseDir)
-			if err != nil {
-				logger.Error(err.Error())
-				os.Exit(1)
-			}
-
-			// inputDir
-			inputDir := fmt.Sprintf("%s/input/%s", baseDir, integrationID)
-			err = os.MkdirAll(inputDir, 0755)
-			if err != nil {
-				logger.Error(err.Error())
-				os.Exit(1)
-			}
-
-			// outputDir
-			outputDir := fmt.Sprintf("%s/output/%s", baseDir, integrationID)
-			err = os.MkdirAll(outputDir, 0777)
-			if err != nil {
-				logger.Error(err.Error())
-				os.Exit(1)
-			}
-
-			// workspaceDir
-			workspaceDir := fmt.Sprintf("%s/workspace/%s", baseDir, integrationID)
-			err = os.MkdirAll(outputDir, 0777)
-			if err != nil {
-				logger.Error(err.Error())
-				os.Exit(1)
-			}
-
-			// run analysis pipeline
-			logger.Info("Starting analysis pipeline")
-			logger.Info("Starting debugging")
-			cmd := exec.Command("nextflow",
-				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
-				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
-				"-w", workspaceDir,
-				"--integrationID", integrationID,
-				"--apiKey", newMsg.ApiKey,
-				"--apiSecret", newMsg.ApiSecret,
-				"--workspaceDir", workspaceDir)
-			cmd.Dir = "/service"
-			var stdout strings.Builder
-			var stderr strings.Builder
-			cmd.Stdout = &stdout
-			cmd.Stderr = &stderr
-			logger.Info("running actual command")
-			if err := cmd.Run(); err != nil {
-				logger.Error(err.Error(),
-					slog.String("error", stderr.String()))
-			}
-
-			logger.Info("after nexflow command run")
-
-			logger.Info("starting cleanup")
-			// cleanup files
-			err = os.RemoveAll(inputDir)
-			if err != nil {
-				logger.Error("error deleting files",
-					slog.String("error", err.Error()))
-			}
-			log.Printf("dir %s deleted", inputDir)
-
-			err = os.RemoveAll(outputDir)
-			if err != nil {
-				logger.Error("error deleting files",
-					slog.String("error", err.Error()))
-			}
-			log.Printf("Dir %s deleted", outputDir)
-
-			logger.Info("starting message deletion")
-			// delete message
-			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
-				QueueUrl:      &queueUrl,
-				ReceiptHandle: msg.ReceiptHandle,
-			})
-
-			if err != nil {
-				logger.Error("error deleting message from SQS",
-					slog.String("error", err.Error()))
-			}
-			log.Printf("message id %s is deleted from queue", id)
-		}(msg)
-
-	}
-	return true, nil
+	return sqs.NewFromConfig(cfg), nil
 }
