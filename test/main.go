@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"errors"
+	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
@@ -42,13 +43,15 @@ func (m *MockSQSClient) DeleteMessage(ctx context.Context, params *sqs.DeleteMes
 
 func (m *MockSQSProcessor) Process(ctx context.Context, queueUrl string) (bool, error) {
 
-	messageBody1 := `{"integrationId": "493f7f5f-ca6e-4b4c-8ba9-78932e4e4f36","api_key": "","api_secret": ""}` // Needs to be an actual ID, key and secret for local test to work
-	messageBody2 := `{"integrationId": "mgs2","api_key": "": ""}`
-	messageBody3 := `{"integrationId": "mgs3","api_key": "","api_secret": ""}`
-	messageBody4 := `{"integrationId": "mgs4","api_key": "","api_secret": ""}`
-	messageBody5 := `{"integrationId": "mgs5","api_key": "","api_secret": ""}`
-	messageBody6 := `{"integrationId": "mgs6","api_key": "","api_secret": "}`
-	messageBody7 := `{"integrationId": "493f7f5f-ca6e-4b4c-8ba9-78932e4e4f36","api_key": "","api_secret": "","cancel": true}`
+	api_key := os.Getenv("API_KEY")
+	api_secret := os.Getenv("API_SECRET")
+	messageBody1 := fmt.Sprintf(`{"integrationId": "493f7f5f-ca6e-4b4c-8ba9-78932e4e4f36","api_key": "%s","api_secret": "%s"}`, api_key, api_secret) // Needs to be an actual ID, key and secret for local test to work
+	messageBody2 := fmt.Sprintf(`{"integrationId": "mgs2","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
+	messageBody3 := fmt.Sprintf(`{"integrationId": "mgs3","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
+	messageBody4 := fmt.Sprintf(`{"integrationId": "mgs4","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
+	messageBody5 := fmt.Sprintf(`{"integrationId": "mgs5","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
+	messageBody6 := fmt.Sprintf(`{"integrationId": "mgs6","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
+	messageBody7 := fmt.Sprintf(`{"integrationId": "493f7f5f-ca6e-4b4c-8ba9-78932e4e4f36","api_key": "%s","api_secret": "%s"}`, api_key, api_secret)
 
 	mockMessages := []types.Message{
 		{
