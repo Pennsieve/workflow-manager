@@ -80,7 +80,7 @@ func ProcessSQS(ctx context.Context, client SQSService, queueUrl string, logger 
 		var fileMutex sync.Mutex
 
 		if newMsg.Cancel == true {
-			logger.Info("Got kill signal")
+			logger.Info("Kill signal received from queue", "Integration ID target", newMsg.IntegrationID)
 
 			killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
 			// Report work done
@@ -171,9 +171,9 @@ func ProcessSQS(ctx context.Context, client SQSService, queueUrl string, logger 
 				var exiterr *exec.ExitError
 				if errors.As(err, &exiterr) {
 					if exiterr.ExitCode() == -1 {
-						logger.Info("Likely kill signal received:", "status code", exiterr.ExitCode())
+						logger.Info("Nextflow exited suddenly from SIGKILL:", "status code", exiterr.ExitCode(), "integrationID", integrationID)
 					} else {
-						logger.Info("Abnormal Exit", "status code", exiterr.ExitCode())
+						logger.Info("Unexpected exit from nextflow", "status code", exiterr.ExitCode())
 					}
 
 				}

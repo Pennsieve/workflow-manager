@@ -35,7 +35,6 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 	}
 	pidString := strings.TrimSpace(string(content))
 
-	logger.Info("Killing nextflow", "IntegrationID", integrationID, "PID", pidString)
 	pid, err := strconv.Atoi(pidString)
 	if err != nil {
 		logger.Error("Error converting string to int: %v\n", err)
@@ -55,7 +54,6 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 
 	// Stop running ECS task
 	ecsCancelled := stopECSTasks(ctx, logger, integrationID)
-	logger.Info("API", "secret", newMsg.ApiSecret, "key", newMsg.ApiKey)
 	if ecsCancelled {
 		err = updateIntegration(WorkflowInstanceStatusCanceled, integrationID, logger, newMsg)
 		if err != nil {
@@ -96,7 +94,7 @@ func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string
 
 	// Get taskArn and ClusterName
 	baseDir := GetBaseDir()
-	logger.Info("Open Processor.csv")
+
 	file, err := os.Open(filepath.Join(baseDir, "workspace", integrationID, "processors.csv"))
 	if err != nil {
 		logger.Info("Error opening file", "error", err)
@@ -156,8 +154,6 @@ func updateIntegration(status string, integrationID string, logger *slog.Logger,
 	if err != nil {
 		log.Fatalf("Error marshalling JSON: %v", err)
 	}
-	logger.Info("json data", "data", string(jsonData))
-	logger.Info("data", "data", data)
 
 	// Create the PUT request
 	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
@@ -172,8 +168,6 @@ func updateIntegration(status string, integrationID string, logger *slog.Logger,
 		logger.Info("Error making request", "error", err)
 		return err
 	}
-	logger.Info("URL", "url", url)
-	logger.Info("HTTP status code", "status code", resp.StatusCode)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
