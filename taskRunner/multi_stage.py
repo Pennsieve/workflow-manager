@@ -1,21 +1,21 @@
 #!/usr/bin/python3
 
-from boto3 import client as boto3_client
-import sys
-import os
-import requests
+import csv
 import json
 import logging
-import csv
+import os
+import requests
 import subprocess
+import sys
+
+from api import AuthenticationClient, WorkflowInstanceClient
+from boto3 import client as boto3_client
+from config import Config
+from datetime import datetime, timezone
 
 logger = logging.getLogger('WorkflowManager')
 
-ecs_client = boto3_client("ecs", region_name=os.environ['REGION'])
-
-# Gather our code in a main() function
 def main():
-    workspaceDir=sys.argv[7]
     # Setup logging
     logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
@@ -24,71 +24,31 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    logger.info('running task runner for integrationID', sys.argv[1])
     integration_id = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
     workflow = json.loads(sys.argv[4])
-    inputDir = sys.argv[5]
-    outputDir = sys.argv[6]
+    input_directory = sys.argv[5]
+    output_directory = sys.argv[6]
+    workspace_directory = sys.argv[7]
 
-    # compute node / workflow manager specific
-    subnet_ids = os.environ['SUBNET_IDS']
-    cluster_name = os.environ['CLUSTER_NAME']
-    security_group = os.environ['SECURITY_GROUP_ID']
-    base_dir = os.environ['BASE_DIR']
-    env = os.environ['ENVIRONMENT']
-    
-    # App specific - params? - defaults on app creation, then overriden on run
-    # session token retrieval should be on the processor(s)
-    pennsieve_host = ""
-    pennsieve_host2 = ""
-    pennsieve_upload_bucket = "" # agent specific
-    pennsieve_agent_home = "/tmp" # agent specific
+    logger.info("running task runner for workflow instance ID={0}".format(integration_id))
 
-    if env == "dev":
-        pennsieve_host = "https://api.pennsieve.net"
-        pennsieve_host2 = "https://api2.pennsieve.net"
-        pennsieve_upload_bucket = "pennsieve-dev-uploads-v2-use1"
-    else:
-        pennsieve_host = "https://api.pennsieve.io"
-        pennsieve_host2 = "https://api2.pennsieve.io"
+    config = Config()
+    auth_client = AuthenticationClient(config.API_HOST)
+    workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
 
-    container_name = ""
-    task_definition_name = ""
+    ecs_client = boto3_client("ecs", region_name=config.REGION)
+    sts_client = boto3_client("sts")
 
-    # create processors.csv file and header: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
-    # create csv file
-    with open("{0}/processors.csv".format(workspaceDir), 'w', newline='') as csvfile:
+    with open("{0}/processors.csv".format(workspace_directory), 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        data = [['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']]
-
-        for row in data:
-            writer.writerow(row)
-
-        csvfile.close()   
+        header = ['integration_id', 'task_id', 'log_group_name', 'log_stream_name', 'application_uuid', 'container_name', 'application_type']
+        writer.writerow(header)
+        csvfile.close()
 
     for app in workflow:
-        # get session_token
-        r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
-        r.raise_for_status()
-
-        cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
-        cognito_region = r.json()["region"]
-
-        cognito_idp_client = boto3_client(
-        "cognito-idp",
-        region_name=cognito_region,
-        aws_access_key_id="",
-        aws_secret_access_key="",
-        )
-                
-        login_response = cognito_idp_client.initiate_auth(
-        AuthFlow="USER_PASSWORD_AUTH",
-        AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
-        ClientId=cognito_app_client_id,
-        )
-        session_token = login_response["AuthenticationResult"]["AccessToken"]
+        session_token = auth_client.authenticate(api_key, api_secret)
 
         container_name = app['applicationContainerName']
         task_definition_name = app['applicationId']
@@ -110,15 +70,15 @@ def main():
             },
             {
                 'name': 'BASE_DIR',
-                'value': base_dir
+                'value': config.BASE_DIR
             },
             {
                 'name': 'PENNSIEVE_API_HOST',
-                'value': pennsieve_host
+                'value': config.API_HOST
             },
                                     {
                 'name': 'PENNSIEVE_API_HOST2',
-                'value': pennsieve_host2
+                'value': config.API_HOST2
             },
             {
                 'name': 'SESSION_TOKEN',
@@ -126,129 +86,156 @@ def main():
             },
             {
                 'name': 'ENVIRONMENT',
-                'value': env
+                'value': config.ENVIRONMENT
             },
             {
                 'name': 'REGION',
-                'value': os.environ['REGION']
+                'value': config.REGION
             },
             {
                 'name': 'INPUT_DIR',
-                'value': inputDir
+                'value': input_directory
             },
             {
                 'name': 'OUTPUT_DIR',
-                'value': outputDir
+                'value': output_directory
             },
             {
                 'name': 'PENNSIEVE_AGENT_HOME',
-                'value': pennsieve_agent_home
+                'value': "/tmp"
             },
             {
                 'name': 'PENNSIEVE_UPLOAD_BUCKET',
-                'value': pennsieve_upload_bucket
+                'value': config.UPLOAD_BUCKET
             }, 
         ]
-                
+
         if 'params' in app:
-            application_params = app['params']        
+            application_params = app['params']
             for key, value in application_params.items():
                 new_param = {
-                                'name': f'{key}'.upper(),
-                                'value': f'{value}'
+                    'name': f'{key}'.upper(),
+                    'value': f'{value}'
                 }
                 environment.append(new_param)
 
-        command = []
-        if 'commandArguments' in app:
-            command = app['commandArguments']
-    
-        logger.info("starting: container_name={0},application_type={1}".format(container_name, application_type))
-        # start Fargate task
-        if cluster_name != "":
+        command = app.get('commandArguments', [])
+
+        logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
+
+        if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
-            response = ecs_client.run_task(
-                cluster = cluster_name,
-                launchType = 'FARGATE',
-                taskDefinition=task_definition_name,
-                count = 1,
-                platformVersion='LATEST',
-                networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': subnet_ids.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [security_group]
-                    }   
-                },
-                overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': environment,
-                        'command': command,
-                    },
-                ],
-            })
 
-            task_arn = response['tasks'][0]['taskArn']
+            now = datetime.now(timezone.utc).timestamp()
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command)
+            workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'STARTED', now, session_token)
+
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
-            
+
             # gather log related info
-            container_taskArn = response['tasks'][0]['containers'][0]['taskArn']
-            taskId = container_taskArn.split("/")[2]
-            log_stream_name = "ecs/{0}/{1}".format(container_name,taskId) 
+            task_id = container_task_arn.split("/")[2]
+            log_stream_name = "ecs/{0}/{1}".format(container_name, task_id)
+            log_group_name = get_log_group_name(ecs_client, config, task_definition_name)
 
-            log_response = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
-            log_configuration = log_response['taskDefinition']['containerDefinitions'][0]['logConfiguration']
-            log_group_name = log_configuration['options']['awslogs-group']
-
-            # add to processors.csv file: integration_id, log_group_name, log_stream_name, application_uuid, container_name, applicationType
-            with open("{0}/processors.csv".format(workspaceDir), 'a', newline='') as csvfile:
+            with open("{0}/processors.csv".format(workspace_directory), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, taskId, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+                data = [[integration_id, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
 
                 for row in data:
                     writer.writerow(row)
                 csvfile.close()
-            
-            # sync
-            sts_client = boto3_client("sts")
-            account_id = sts_client.get_caller_identity()["Account"]
-            bucket_name = "tfstate-{0}".format(account_id)
-            prefix = "{0}/logs/{1}".format(env,integration_id)
 
-            try:
-                output = subprocess.run(["aws", "s3", "sync", workspaceDir, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
-                logger.info(output)
-            except subprocess.CalledProcessError as e:
-                logger.info(f"command failed with return code {e.returncode}")
-            
-            waiter = ecs_client.get_waiter('tasks_stopped')
-            waiter.wait(
-                cluster=cluster_name,
-                tasks=[task_arn],
-                WaiterConfig={
-                    'Delay': 30,
-                    'MaxAttempts': 2000
-                }
-            )
+            sync_logs(sts_client, config, integration_id, workspace_directory)
+            exit_code = poll_task(ecs_client, config, task_arn)
 
-            response = ecs_client.describe_tasks(
-                cluster=cluster_name,
-                tasks=[task_arn]
-            )
-
-            exit_code = response['tasks'][0]['containers'][0]['exitCode']
-            
+            now = datetime.now(timezone.utc).timestamp()
             if exit_code == 0:
-                logger.info("success: container_name={0},application_type={1}".format(container_name, application_type))
+                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
+                logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
             else:
-                logger.error("error: container_name={0},application_type={1}".format(container_name, application_type))
+                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'FAILED', now, session_token)
+                logger.error("error: container_name={0}, application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 
-            logger.info("fargate task has stopped: " + task_definition_name)
+    logger.info("fargate task has stopped: " + task_definition_name)
 
-# Standard boilerplate to call the main() function to begin
-# the program.
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command):
+    if config.IS_LOCAL:
+        return "local-task-arn","container/task-arn/local"
+
+    response = ecs_client.run_task(
+        cluster = config.CLUSTER_NAME,
+        launchType = 'FARGATE',
+        taskDefinition=task_definition_name,
+        count = 1,
+        platformVersion='LATEST',
+        networkConfiguration={
+            'awsvpcConfiguration': {
+                'subnets': config.SUBNET_IDS.split(","),
+                'assignPublicIp': 'ENABLED',
+                'securityGroups': [config.SECURITY_GROUP]
+                }   
+        },
+        overrides={
+            'containerOverrides': [
+                {
+                    'name': container_name,
+                    'environment': environment,
+                    'command': command,
+                },
+            ],
+    })
+
+    task_arn = response['tasks'][0]['taskArn']
+    container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
+
+    return task_arn, container_task_arn
+
+def poll_task(ecs_client, config, task_arn):
+    if config.IS_LOCAL:
+        return 0
+
+    waiter = ecs_client.get_waiter('tasks_stopped')
+    waiter.wait(
+        cluster=config.CLUSTER_NAME,
+        tasks=[task_arn],
+        WaiterConfig={
+            'Delay': 30,
+            'MaxAttempts': 2000
+        }
+    )
+
+    response = ecs_client.describe_tasks(
+        cluster=config.CLUSTER_NAME,
+        tasks=[task_arn]
+    )
+
+    exit_code = response['tasks'][0]['containers'][0]['exitCode']
+    return exit_code
+
+def get_log_group_name(ecs_client, config, task_definition_name):
+    if config.IS_LOCAL:
+        return "local-log-group-name"
+
+    log_response = ecs_client.describe_task_definition(taskDefinition=task_definition_name)
+    log_configuration = log_response['taskDefinition']['containerDefinitions'][0]['logConfiguration']
+    log_group_name = log_configuration['options']['awslogs-group']
+
+    return log_group_name
+
+def sync_logs(sts_client, config, integration_id, workspace_directory):
+    if config.IS_LOCAL:
+        return
+
+    account_id = sts_client.get_caller_identity()["Account"]
+    bucket_name = "tfstate-{0}".format(account_id)
+    prefix = "{0}/logs/{1}".format(config.ENVIRONMENT, integration_id)
+
+    try:
+        output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
+        logger.info(output)
+    except subprocess.CalledProcessError as e:
+        logger.info(f"command failed with return code {e.returncode}")
+
 if __name__ == '__main__':
     main()
