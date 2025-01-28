@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"io"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -52,6 +55,7 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 
 	// Stop running ECS task
 	ecsCancelled := stopECSTasks(ctx, logger, integrationID)
+	logger.Info("API", "secret", newMsg.ApiSecret, "key", newMsg.ApiKey)
 	if ecsCancelled {
 		err = updateIntegration(WorkflowInstanceStatusCanceled, integrationID, logger, newMsg)
 		if err != nil {
@@ -126,28 +130,39 @@ func updateIntegration(status string, integrationID string, logger *slog.Logger,
 
 	env := strings.ToLower(os.Getenv("ENVIRONMENT"))
 	var pennsieveHost string
+	var pennsieveHost2 string
 	if env == "dev" || env == "local" {
-		pennsieveHost = "https://api2.pennsieve.net"
+		pennsieveHost = "https://api.pennsieve.net"
+		pennsieveHost2 = "https://api2.pennsieve.net"
 	} else {
-		pennsieveHost = "https://api2.pennsieve.io"
+		pennsieveHost = "https://api.pennsieve.io"
+		pennsieveHost2 = "https://api2.pennsieve.io"
 	}
+
 	accessToken, err := getAccessToken(pennsieveHost, newMsg.ApiKey, newMsg.ApiSecret)
 	if err != nil {
 		logger.Info("Could not access Session token", "error", err)
 	}
 
-	url := fmt.Sprintf("%s/workflows/instances/%s/status", pennsieveHost, integrationID)
+	url := fmt.Sprintf("%s/workflows/instances/%s/status", pennsieveHost2, integrationID)
 
-	jsonData := fmt.Sprintf(`{
-		"uuid": %s,
-		"status": %s,
-		"timestamp": %s
-	}`, integrationID, status, time.Now().String())
+	data := map[string]interface{}{
+		"uuid":      integrationID,
+		"status":    status,
+		"timestamp": time.Now().Unix(),
+	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer([]byte(jsonData)))
+	jsonData, err := json.Marshal(data)
 	if err != nil {
-		logger.Info("Error creating request", "error", err)
-		return err
+		log.Fatalf("Error marshalling JSON: %v", err)
+	}
+	logger.Info("json data", "data", string(jsonData))
+	logger.Info("data", "data", data)
+
+	// Create the PUT request
+	req, err := http.NewRequest("PUT", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Fatalf("Error creating request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
@@ -157,7 +172,15 @@ func updateIntegration(status string, integrationID string, logger *slog.Logger,
 		logger.Info("Error making request", "error", err)
 		return err
 	}
+	logger.Info("URL", "url", url)
 	logger.Info("HTTP status code", "status code", resp.StatusCode)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.Info("Error reading response body", "error", err)
+		return err
+	}
+	logger.Info("body", "body", string(body))
 	if resp.StatusCode != http.StatusOK {
 		logger.Info("Request failed with status code", "status code", resp.StatusCode)
 	} else {

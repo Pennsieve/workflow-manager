@@ -86,8 +86,9 @@ func readFile(baseDir, integrationID string) ([]byte, error) {
 func getAccessToken(pennsieveHost string, apiKey string, apiSecret string) (string, error) {
 
 	var sessionToken string
-	
-	resp, err := http.Get(fmt.Sprintf("%s/authentication/cognito-config", pennsieveHost))
+
+	url := fmt.Sprintf("%s/authentication/cognito-config", pennsieveHost)
+	resp, err := http.Get(url)
 	if err != nil {
 		return sessionToken, err
 	}
@@ -130,7 +131,6 @@ func getAccessToken(pennsieveHost string, apiKey string, apiSecret string) (stri
 	}
 
 	sessionToken = aws.ToString(authResp.AuthenticationResult.AccessToken)
-	fmt.Println("Session Token:", sessionToken)
 
 	return sessionToken, nil
 }
