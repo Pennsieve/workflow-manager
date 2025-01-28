@@ -1,4 +1,4 @@
-package main
+package helpers
 
 import (
 	"context"
@@ -17,7 +17,33 @@ import (
 	"sync"
 )
 
-func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger) (bool, error) {
+const (
+	visibilityTimeout              = 4320 * 10
+	waitingTimeout                 = 20
+	WorkflowInstanceStatusCanceled = "CANCELED"
+)
+
+type CommandStatusInfo struct {
+	IntegrationID string
+	PID           int
+	InputDir      string
+	OutputDir     string
+}
+
+type MsgType struct {
+	IntegrationID string `json:"integrationId"`
+	ApiKey        string `json:"api_key"`
+	ApiSecret     string `json:"api_secret"`
+	Cancel        bool   `json:"cancel"`
+}
+
+type SQSService interface {
+	ReceiveMessage(ctx context.Context, input *sqs.ReceiveMessageInput, opts ...func(*sqs.Options)) (*sqs.ReceiveMessageOutput, error)
+	DeleteMessage(ctx context.Context, input *sqs.DeleteMessageInput, opts ...func(*sqs.Options)) (*sqs.DeleteMessageOutput, error)
+}
+
+func ProcessSQS(ctx context.Context, client SQSService, queueUrl string, logger *slog.Logger) (bool, error) {
+	var wg sync.WaitGroup
 	input := &sqs.ReceiveMessageInput{
 		QueueUrl:            &queueUrl,
 		MaxNumberOfMessages: 1,
@@ -25,8 +51,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		WaitTimeSeconds:     waitingTimeout, // use long polling
 	}
 
-	resp, err := sqsSvc.ReceiveMessage(ctx, input)
-
+	resp, err := client.ReceiveMessage(ctx, input)
 	if err != nil {
 		return false, fmt.Errorf("error receiving message %w", err)
 	}
@@ -37,9 +62,10 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 	}
 
 	// Track completed nextflow tasks
-	doneChannel := make(chan *CommandStatusInfo)
+	doneChannel := make(chan CommandStatusInfo)
 
 	for _, msg := range resp.Messages {
+		wg.Add(1)
 
 		var newMsg MsgType
 		id := *msg.MessageId
@@ -52,16 +78,25 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
 
 		var fileMutex sync.Mutex
+
 		if newMsg.Cancel == true {
-			go killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
+			logger.Info("Got kill signal")
+
+			killProcess(ctx, newMsg.IntegrationID, &fileMutex, logger, newMsg)
+			// Report work done
+			doneChannel <- CommandStatusInfo{
+				IntegrationID: newMsg.IntegrationID,
+				PID:           0,
+				InputDir:      "inputDir",
+				OutputDir:     "outputDir",
+			}
 			continue
 		}
-
 		go func(msg types.Message) {
 			logger.Info("Initializing workspace ...")
 
 			integrationID := newMsg.IntegrationID
-			baseDir := getBaseDir()
+			baseDir := GetBaseDir()
 
 			// create workspace sub-directories
 			err := os.Chdir(baseDir)
@@ -115,6 +150,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error(err.Error(),
 					slog.String("error", stderr.String()))
 			}
+			logger.Info("Started Nextflow command for", "integration", integrationID)
 
 			// Save PID to file
 			pid := cmd.Process.Pid
@@ -123,11 +159,6 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			defer fileMutex.Unlock()
 			pidFile, err := os.OpenFile(filepath.Join(baseDir, "pids", integrationID), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
 			defer pidFile.Close()
-
-			if err != nil {
-				fmt.Printf("Error locking file: %v\n", err)
-				return
-			}
 
 			_, err = pidFile.WriteString(strconv.Itoa(pid))
 			if err != nil {
@@ -149,7 +180,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 
 			// Report work done
-			doneChannel <- &CommandStatusInfo{
+			doneChannel <- CommandStatusInfo{
 				IntegrationID: integrationID,
 				PID:           pid,
 				InputDir:      inputDir,
@@ -160,26 +191,10 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		// Receive complete messages when nextflow task is done
 		// Then clean up input / output files
 		go func(msg types.Message) {
-			for cmdInfo := range doneChannel {
-				// Delete input and output directories after the command completes
-				logger.Info("Clean up files for IntegrationID", "IntegrationID", cmdInfo.IntegrationID)
-
-				err = os.RemoveAll(cmdInfo.InputDir)
-				if err != nil {
-					logger.Error("error deleting files",
-						slog.String("error", err.Error()))
-				}
-				logger.Info("dir deleted", "InputDir", cmdInfo.InputDir)
-
-				err = os.RemoveAll(cmdInfo.OutputDir)
-				if err != nil {
-					logger.Error("error deleting files",
-						slog.String("error", err.Error()))
-				}
-				logger.Info("Dir deleted", "OutputDir", cmdInfo.OutputDir)
-
+			for _ = range doneChannel {
+				wg.Done()
 				// delete message
-				_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+				_, err = client.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 					QueueUrl:      &queueUrl,
 					ReceiptHandle: msg.ReceiptHandle,
 				})
@@ -191,9 +206,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Info("message id deleted from queue", "id", id)
 			}
 		}(msg)
-
-		close(doneChannel)
-
 	}
+	wg.Wait()
+	//close(doneChannel)
 	return true, nil
 }

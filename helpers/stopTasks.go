@@ -1,4 +1,4 @@
-package main
+package helpers
 
 import (
 	"bytes"
@@ -22,7 +22,7 @@ import (
 func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, logger *slog.Logger, newMsg MsgType) {
 	lock.Lock()
 	defer lock.Unlock()
-	baseDir := getBaseDir()
+	baseDir := GetBaseDir()
 
 	logger.Info("Attempt to kill process for integration", "integration", integrationID)
 
@@ -61,6 +61,23 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 			return
 		}
 	}
+
+	// Delete input and output directories after the command completes
+	//logger.Info("Clean up files for IntegrationID", "IntegrationID", integrationID)
+	//
+	//err = os.RemoveAll("service/input/" + integrationID)
+	//if err != nil {
+	//	logger.Error("error deleting files",
+	//		slog.String("error", err.Error()))
+	//}
+	//logger.Info("dir deleted", "InputDir", "service/input/"+integrationID)
+	//
+	//err = os.RemoveAll("service/output/" + integrationID)
+	//if err != nil {
+	//	logger.Error("error deleting files",
+	//		slog.String("error", err.Error()))
+	//}
+	//logger.Info("Dir deleted", "OutputDir", "service/output/"+integrationID)
 }
 
 func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string) bool {
@@ -76,8 +93,9 @@ func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string
 	client := ecs.NewFromConfig(cfg)
 
 	// Get taskArn and ClusterName
-	baseDir := getBaseDir()
-	file, err := os.Open(filepath.Join(baseDir, "processors.csv"))
+	baseDir := GetBaseDir()
+	logger.Info("Open Processor.csv")
+	file, err := os.Open(filepath.Join(baseDir, "workspace", integrationID, "processors.csv"))
 	if err != nil {
 		logger.Info("Error opening file", "error", err)
 		return false
@@ -140,7 +158,7 @@ func updateIntegration(status string, integrationID string, logger *slog.Logger,
 		logger.Info("Error making request", "error", err)
 		return err
 	}
-
+	logger.Info("HTTP status code", "status code", resp.StatusCode)
 	if resp.StatusCode != http.StatusOK {
 		logger.Info("Request failed with status code", "status code", resp.StatusCode)
 	} else {
