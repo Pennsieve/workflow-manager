@@ -119,7 +119,7 @@ def main():
                 }
                 environment.append(new_param)
 
-        command = app['commandArguments'] if 'commandArguments' in app else []
+        command = app.get('commandArguments', [])
 
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
