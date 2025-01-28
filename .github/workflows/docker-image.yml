@@ -33,4 +33,4 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: pennsieve/workflow-manager:${{needs.read-tag.outputs.TAG}}, pennsieve/workflow-manager:latest
+        tags: pennsieve/workflow-manager:${{needs.read-tag.outputs.TAG}} #, pennsieve/workflow-manager:latest
