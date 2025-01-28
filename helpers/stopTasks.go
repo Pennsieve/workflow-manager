@@ -25,7 +25,6 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 	baseDir := GetBaseDir()
 
 	logger.Info("Attempt to kill process for integration", "integration", integrationID)
-
 	content, err := readFile(baseDir, integrationID)
 	if err != nil {
 		fmt.Println("Error reading file:", err)
@@ -39,11 +38,10 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 		logger.Error("Error converting string to int: %v\n", err)
 		return
 	}
-	// kill -9 [PID]
+	//kill - 9[PID]
 	err = syscall.Kill(pid, syscall.SIGKILL)
 	if err != nil {
-		logger.Error("Failed to kill process", "PID", pid, "error", err)
-		return
+		logger.Error("Failed to kill process. Did process already exit?", "PID", pid, "error", err)
 	}
 	logger.Info("Killed process", "pid", pid, "integration", integrationID)
 
@@ -62,22 +60,22 @@ func killProcess(ctx context.Context, integrationID string, lock *sync.Mutex, lo
 		}
 	}
 
-	// Delete input and output directories after the command completes
-	//logger.Info("Clean up files for IntegrationID", "IntegrationID", integrationID)
-	//
-	//err = os.RemoveAll("service/input/" + integrationID)
-	//if err != nil {
-	//	logger.Error("error deleting files",
-	//		slog.String("error", err.Error()))
-	//}
-	//logger.Info("dir deleted", "InputDir", "service/input/"+integrationID)
-	//
-	//err = os.RemoveAll("service/output/" + integrationID)
-	//if err != nil {
-	//	logger.Error("error deleting files",
-	//		slog.String("error", err.Error()))
-	//}
-	//logger.Info("Dir deleted", "OutputDir", "service/output/"+integrationID)
+	//Delete input and output directories after the command completes
+	logger.Info("Clean up files for IntegrationID", "IntegrationID", integrationID)
+
+	err = os.RemoveAll("service/input/" + integrationID)
+	if err != nil {
+		logger.Error("error deleting files",
+			slog.String("error", err.Error()))
+	}
+	logger.Info("dir deleted", "InputDir", "service/input/"+integrationID)
+
+	err = os.RemoveAll("service/output/" + integrationID)
+	if err != nil {
+		logger.Error("error deleting files",
+			slog.String("error", err.Error()))
+	}
+	logger.Info("Dir deleted", "OutputDir", "service/output/"+integrationID)
 }
 
 func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string) bool {
@@ -118,6 +116,7 @@ func stopECSTasks(ctx context.Context, logger *slog.Logger, integrationID string
 			if err != nil {
 				logger.Error("failed to stop task", "integrationID", integrationID, "error", err)
 			}
+			logger.Info("Stop ECS message sent")
 		}
 	}
 	return true
