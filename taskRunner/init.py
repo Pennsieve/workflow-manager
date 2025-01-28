@@ -1,55 +1,28 @@
-#!/usr/bin/python3
-
-import sys
-import requests
 import json
-from boto3 import client as boto3_client
-import os
+import requests
+import sys
 
-# Gather our code in a main() function
+from api import AuthenticationClient, WorkflowInstanceClient
+from config import Config
+from datetime import datetime, timezone
+
 def main():
-    env = os.environ['ENVIRONMENT']
-    integrationId = sys.argv[1]
+    config = Config()
+
+    workflow_instance_id = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3] 
 
-    pennsieve_host = ""
-    pennsieve_host2 = ""
+    auth_client = AuthenticationClient(config.API_HOST)
+    session_token = auth_client.authenticate(api_key, api_secret)
 
-    if env == "dev":
-        pennsieve_host = "https://api.pennsieve.net"
-        pennsieve_host2 = "https://api2.pennsieve.net"
-    else:
-        pennsieve_host = "https://api.pennsieve.io"
-        pennsieve_host2 = "https://api2.pennsieve.io"
-    
-    # get session_token
-    r = requests.get(f"{pennsieve_host}/authentication/cognito-config")
-    r.raise_for_status()
+    workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
+    workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
 
-    cognito_app_client_id = r.json()["tokenPool"]["appClientId"]
-    cognito_region = r.json()["region"]
+    now = datetime.now(timezone.utc).timestamp()
+    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, workflow_instance_id, 'STARTED', now, session_token)
 
-    cognito_idp_client = boto3_client(
-    "cognito-idp",
-    region_name=cognito_region,
-    aws_access_key_id="",
-    aws_secret_access_key="",
-    )
-            
-    login_response = cognito_idp_client.initiate_auth(
-    AuthFlow="USER_PASSWORD_AUTH",
-    AuthParameters={"USERNAME": api_key, "PASSWORD": api_secret},
-    ClientId=cognito_app_client_id,
-    )
+    print(json.dumps(workflow_instance["workflow"]), end="")
 
-    session_token = login_response["AuthenticationResult"]["AccessToken"]
-    
-    r = requests.get(f"{pennsieve_host2}/integrations/{integrationId}", headers={"Authorization": f"Bearer {session_token}"})
-    r.raise_for_status()
-    print(json.dumps(r.json()["workflow"]))
-
-# Standard boilerplate to call the main() function to begin
-# the program.
 if __name__ == '__main__':
     main()
