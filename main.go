@@ -180,10 +180,11 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 
 			// run analysis pipeline
+			nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 			logger.Info("Starting analysis pipeline")
 			logger.Info("Starting debugging")
 			cmd := exec.Command("nextflow",
-				"-log", fmt.Sprintf("%s/nextflow.log", workspaceDir),
+				"-log", nextflowLogPath,
 				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
@@ -197,11 +198,19 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			cmd.Stderr = &stderr
 			logger.Info("running actual command")
 			if err := cmd.Run(); err != nil {
+				var nextflowLog string
+				if nextflowLogBytes, logErr := os.ReadFile(nextflowLogPath); logErr != nil {
+					nextflowLog = fmt.Sprintf("unable to read nextflow log: %s", logErr)
+				} else {
+					nextflowLog = string(nextflowLogBytes)
+				}
 				logger.Error(err.Error(),
-					slog.String("error", stderr.String()))
+					slog.String("stderr", stderr.String()),
+					slog.String("stdout", stdout.String()),
+					slog.String("nextflowLog", nextflowLog))
 			}
 
-			logger.Info("after nexflow command run")
+			logger.Info("after nextflow command run")
 
 			logger.Info("starting cleanup")
 			// cleanup files
