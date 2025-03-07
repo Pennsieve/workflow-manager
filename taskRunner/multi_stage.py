@@ -107,7 +107,23 @@ def main():
             {
                 'name': 'PENNSIEVE_UPLOAD_BUCKET',
                 'value': config.UPLOAD_BUCKET
-            }, 
+            },
+            {
+                'name': 'VIZ_SECURITY_GROUP_ID',
+                'value': config.VIZ_SECURITY_GROUP_ID
+            },
+            {
+                'name': 'VIZ_TASK_DEFINITION_NAME',
+                'value': config.VIZ_TASK_DEFINITION_NAME
+            },
+            {
+                'name': 'VIZ_CONTAINER_NAME',
+                'value': config.VIZ_CONTAINER_NAME
+            },
+            {
+                'name': 'CLUSTER_NAME',
+                'value': config.CLUSTER_NAME
+            },
         ]
 
         if 'params' in app:
