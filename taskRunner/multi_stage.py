@@ -244,6 +244,7 @@ def start_visualization_task(ecs_client, config):
     # })
 
     response = ecs_client.update_service(
+        cluster=config.CLUSTER_NAME,
         service=config.VIZ_CONTAINER_NAME,
         desiredCount=1
     )
