@@ -58,9 +58,8 @@ def main():
         # TODO: refactor
         application_name = app['name']
         if application_name == 'post-processor-visualization':
-            task_arn, container_task_arn = start_visualization_task(ecs_client, config)
-            print(task_arn)
-            print(container_task_arn)
+            response = start_visualization_task(ecs_client, config)
+            logger.info(json.dumps(response, indent=4, default=str))
 
         environment = [
             {
@@ -223,31 +222,37 @@ def start_visualization_task(ecs_client, config):
     if config.IS_LOCAL:
         return "local-task-arn","container/task-arn/local"
 
-    response = ecs_client.run_task(
-        cluster = config.CLUSTER_NAME,
-        launchType = 'FARGATE',
-        taskDefinition=config.VIZ_TASK_DEFINITION_NAME,
-        count = 1,
-        platformVersion='LATEST',
-        networkConfiguration={
-            'awsvpcConfiguration': {
-                'subnets': config.SUBNET_IDS.split(","),
-                'assignPublicIp': 'ENABLED',
-                'securityGroups': [config.VIZ_SECURITY_GROUP_ID, config.SECURITY_GROUP]
-                }   
-        },
-        overrides={
-            'containerOverrides': [
-                {
-                    'name': config.VIZ_CONTAINER_NAME,
-                },
-            ],
-    })
+    # response = ecs_client.run_task(
+    #     cluster = config.CLUSTER_NAME,
+    #     launchType = 'FARGATE',
+    #     taskDefinition=config.VIZ_TASK_DEFINITION_NAME,
+    #     count = 1,
+    #     platformVersion='LATEST',
+    #     networkConfiguration={
+    #         'awsvpcConfiguration': {
+    #             'subnets': config.SUBNET_IDS.split(","),
+    #             'assignPublicIp': 'ENABLED',
+    #             'securityGroups': [config.VIZ_SECURITY_GROUP_ID, config.SECURITY_GROUP]
+    #             }   
+    #     },
+    #     overrides={
+    #         'containerOverrides': [
+    #             {
+    #                 'name': config.VIZ_CONTAINER_NAME,
+    #             },
+    #         ],
+    # })
 
-    task_arn = response['tasks'][0]['taskArn']
-    container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
+    response = ecs_client.update_service(
+        service=config.VIZ_CONTAINER_NAME,
+        desiredCount=1
+    )
 
-    return task_arn, container_task_arn
+    # task_arn = response['tasks'][0]['taskArn']
+    # container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
+
+    # return task_arn, container_task_arn
+    return response
 
 def poll_task(ecs_client, config, task_arn):
     if config.IS_LOCAL:
