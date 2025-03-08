@@ -233,7 +233,7 @@ def start_visualization_task(ecs_client, config):
             'awsvpcConfiguration': {
                 'subnets': config.SUBNET_IDS.split(","),
                 'assignPublicIp': 'ENABLED',
-                'securityGroups': [config.VIZ_SECURITY_GROUP_ID]
+                'securityGroups': [config.VIZ_SECURITY_GROUP_ID, config.SECURITY_GROUP]
                 }   
         },
         overrides={
