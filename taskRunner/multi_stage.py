@@ -124,7 +124,7 @@ def main():
                 'name': 'CLUSTER_NAME',
                 'value': config.CLUSTER_NAME
             },
-                        {
+            {
                 'name': 'SUBNET_IDS',
                 'value': config.SUBNET_IDS
             },
