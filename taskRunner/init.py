@@ -20,7 +20,7 @@ def main():
     workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
 
     now = datetime.now(timezone.utc).timestamp()
-    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, workflow_instance_id, 'STARTED', now, session_token)
+    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, 'STARTED', now, session_token)
 
     print(json.dumps(workflow_instance["workflow"]), end="")
 
