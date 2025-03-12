@@ -24,7 +24,5 @@ def main():
         session_token
     )
 
-    print(json.dumps(response_body))
-
 if __name__ == '__main__':
     main()
