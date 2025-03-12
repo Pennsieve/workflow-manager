@@ -154,7 +154,7 @@ def main():
 
             now = datetime.now(timezone.utc).timestamp()
             task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command)
-            workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'STARTED', now, session_token)
+            workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
@@ -176,10 +176,10 @@ def main():
 
             now = datetime.now(timezone.utc).timestamp()
             if exit_code == 0:
-                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
                 logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
             else:
-                workflow_instance_client.put_workflow_instance_status(integration_id, application_uuid, 'FAILED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'FAILED', now, session_token)
                 logger.error("error: container_name={0}, application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 
