@@ -51,7 +51,7 @@ process FinaliseWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret} ${params.outputDir}
     """
 }
 
