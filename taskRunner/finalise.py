@@ -31,17 +31,18 @@ def main():
     workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
     workflow_instance_params = workflow_instance["params"]
    
-    if config.IS_LOCAL:
-        return
-    
-    ecs_client = boto3_client("ecs", region_name=config.REGION)
     if workflow_instance_params["visualize"] == "true":
+        if config.IS_LOCAL:
+            return
+        
+        ecs_client = boto3_client("ecs", region_name=config.REGION)
         response = start_visualization_task(ecs_client, config)
         print(json.dumps(response))
     else:
         # Clear output directory
         try:
-            shutil.rmtree(f'{output_directory}/{workflow_instance_id}')
+            shutil.rmtree(output_directory)
+            print(f'dir: {output_directory} deleted')
         except Exception as e:
             print(f"Failed to delete directory: {e}")
 
