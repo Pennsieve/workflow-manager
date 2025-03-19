@@ -2,3 +2,4 @@
 dev.env
 workflows/processors.csv
 /.idea/
+workflows/workspace/*

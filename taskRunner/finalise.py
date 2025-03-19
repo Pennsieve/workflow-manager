@@ -3,12 +3,23 @@ import requests
 import sys
 from boto3 import client as boto3_client
 import shutil
+import logging
 
 from api import AuthenticationClient, WorkflowInstanceClient
 from config import Config
 from datetime import datetime, timezone
 
+logger = logging.getLogger('WorkflowManager')
+
 def main():
+    # Setup logging
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     config = Config()
 
     workflow_instance_id = sys.argv[1]
@@ -29,15 +40,18 @@ def main():
 
     # start visualization task 
     workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
-    workflow_instance_params = workflow_instance["params"]
+    workflow_instance_params = workflow_instance['params']
+    logger.info(workflow_instance_params)
    
-    if workflow_instance_params["visualize"] == "true":
-        if config.IS_LOCAL:
-            return
-        
-        ecs_client = boto3_client("ecs", region_name=config.REGION)
-        response = start_visualization_task(ecs_client, config)
-        print(json.dumps(response))
+    if 'visualize' in workflow_instance_params:
+        if workflow_instance_params['visualize'] == "true":
+            if config.IS_LOCAL:
+                return
+            
+            logger.info("starting visualization")
+            ecs_client = boto3_client("ecs", region_name=config.REGION)
+            response = start_visualization_task(ecs_client, config)
+            print(json.dumps(response))
     else:
         # Clear output directory
         try:
