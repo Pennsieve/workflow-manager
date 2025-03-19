@@ -17,7 +17,7 @@ class Config:
         self.SECURITY_GROUP                 = getenv('SECURITY_GROUP_ID', not self.IS_LOCAL)
         self.BASE_DIR                       = getenv('BASE_DIR', not self.IS_LOCAL)
         self.REGION                         = getenv('REGION', not self.IS_LOCAL)
-        # self.VIZ_CONTAINER_NAME             = getenv('VIZ_CONTAINER_NAME', not self.IS_LOCAL)
+        self.VIZ_CONTAINER_NAME             = getenv('VIZ_CONTAINER_NAME', not self.IS_LOCAL)
 
         if self.ENVIRONMENT == 'local' or self.ENVIRONMENT == 'dev':
             self.API_HOST       = 'https://api.pennsieve.net'

@@ -64,31 +64,31 @@ def start_visualization_task(ecs_client, config):
     if config.IS_LOCAL:
         return "local-task-arn","container/task-arn/local"
 
-    # if not serving_requests(ecs_client, config.CLUSTER_NAME, config.VIZ_CONTAINER_NAME):
-    #     return ecs_client.update_service(
-    #         cluster=config.CLUSTER_NAME,
-    #         service=config.VIZ_CONTAINER_NAME,
-    #         desiredCount=1
-    #     )
+    if not serving_requests(ecs_client, config.CLUSTER_NAME, config.VIZ_CONTAINER_NAME):
+        return ecs_client.update_service(
+            cluster=config.CLUSTER_NAME,
+            service=config.VIZ_CONTAINER_NAME,
+            desiredCount=1
+        )
 
     return {}
 
-# def serving_requests(ecs_client, cluster_name, service_name):    
-#     # Get service details
-#     response = ecs_client.describe_services(
-#         cluster=cluster_name,
-#         services=[service_name]
-#     )
+def serving_requests(ecs_client, cluster_name, service_name):    
+    # Get service details
+    response = ecs_client.describe_services(
+        cluster=cluster_name,
+        services=[service_name]
+    )
     
-#     # Check if service exists
-#     if not response['services']:
-#         return False
+    # Check if service exists
+    if not response['services']:
+        return False
     
-#     # Get running count
-#     running_count = response['services'][0]['runningCount']
+    # Get running count
+    running_count = response['services'][0]['runningCount']
     
-#     # Return whether service has running tasks
-#     return running_count > 0
+    # Return whether service has running tasks
+    return running_count > 0
 
 if __name__ == '__main__':
     main()
