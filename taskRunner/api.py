@@ -94,13 +94,10 @@ class WorkflowInstanceClient:
             return response_body
         except requests.HTTPError as e:
             log.error(f"request update workflow instance status failed with error: {e}")
-            raise e
         except json.JSONDecodeError as e:
             log.error(f"failed to decode update workflow instance status response with error: {e}")
-            raise e
         except Exception as e:
             log.error(f"failed to update workflow instance status with error: {e}")
-            raise e
 
     def put_workflow_instance_processor_status(self, workflow_instance_id, processor_id, status, timestamp, session_token):
         url = f"{self.api_host}/workflows/instances/{workflow_instance_id}/processor/{processor_id}/status"
@@ -123,10 +120,7 @@ class WorkflowInstanceClient:
             return response_body
         except requests.HTTPError as e:
             log.error(f"request to update workflow instance processor status failed with error: {e}")
-            raise e
         except json.JSONDecodeError as e:
             log.error(f"failed to decode update workflow instance processor status response with error: {e}")
-            raise e
         except Exception as e:
             log.error(f"failed to update workflow instance processor status with error: {e}")
-            raise e
