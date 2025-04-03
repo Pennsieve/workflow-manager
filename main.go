@@ -221,6 +221,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			}
 			log.Printf("dir %s deleted", inputDir)
 
+			err = os.RemoveAll(outputDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", outputDir)
+
 			logger.Info("starting message deletion")
 			// delete message
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
