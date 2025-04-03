@@ -157,6 +157,8 @@ def main():
             exit_code = poll_task(ecs_client, config, task_arn)
 
             now = datetime.now(timezone.utc).timestamp()
+
+            session_token = auth_client.authenticate(api_key, api_secret)  # refresh token
             if exit_code == 0:
                 workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
                 logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
