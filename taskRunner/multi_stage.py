@@ -224,6 +224,7 @@ def poll_task(ecs_client, config, task_arn):
     if 'exitCode' in container:
         exit_code = container['exitCode']
     else:
+        logger.info(container)
         return -1 # error
         
     return exit_code
