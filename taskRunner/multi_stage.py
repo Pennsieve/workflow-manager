@@ -219,7 +219,14 @@ def poll_task(ecs_client, config, task_arn):
         tasks=[task_arn]
     )
 
-    exit_code = response['tasks'][0]['containers'][0]['exitCode']
+    container = response['tasks'][0]['containers'][0]
+
+    if 'exitCode' in container:
+        exit_code = container['exitCode']
+    else:
+        logger.info(container)
+        return -1 # error
+        
     return exit_code
 
 def get_log_group_name(ecs_client, config, task_definition_name):
