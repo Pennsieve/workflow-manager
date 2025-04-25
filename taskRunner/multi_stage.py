@@ -171,43 +171,69 @@ def main():
 def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id):
     if config.IS_LOCAL:
         return "local-task-arn","container/task-arn/local"
-
-    response = ecs_client.run_task(
-        cluster = config.CLUSTER_NAME,
-        launchType = 'FARGATE',
-        taskDefinition=task_definition_name,
-        count = 1,
-        platformVersion='LATEST',
-        networkConfiguration={
-            'awsvpcConfiguration': {
-                'subnets': config.SUBNET_IDS.split(","),
-                'assignPublicIp': 'ENABLED',
-                'securityGroups': [config.SECURITY_GROUP]
-                }   
-        },
-        tags=[
-            {
-                'key': 'WorkflowInstanceId',
-                'value': integration_id
+    
+    response = {}
+    if config.config.ENVIRONMENT == 'dev':
+        response = ecs_client.run_task(
+            cluster = config.CLUSTER_NAME,
+            launchType = 'FARGATE',
+            taskDefinition=task_definition_name,
+            count = 1,
+            platformVersion='LATEST',
+            networkConfiguration={
+                'awsvpcConfiguration': {
+                    'subnets': config.SUBNET_IDS.split(","),
+                    'assignPublicIp': 'ENABLED',
+                    'securityGroups': [config.SECURITY_GROUP]
+                    }   
             },
-            {
-                'key': 'ComputeNode',
-                'value': config.CLUSTER_NAME
-            },
-            {
-                'key': 'Environment',
-                'value': config.ENVIRONMENT
-            }
-        ],
-        overrides={
-            'containerOverrides': [
+            tags=[
                 {
-                    'name': container_name,
-                    'environment': environment,
-                    'command': command,
+                    'key': 'WorkflowInstanceId',
+                    'value': integration_id
                 },
+                {
+                    'key': 'ComputeNode',
+                    'value': config.CLUSTER_NAME
+                },
+                {
+                    'key': 'Environment',
+                    'value': config.ENVIRONMENT
+                }
             ],
-    })
+            overrides={
+                'containerOverrides': [
+                    {
+                        'name': container_name,
+                        'environment': environment,
+                        'command': command,
+                    },
+                ],
+        })
+
+    if config.config.ENVIRONMENT == 'prod':
+        response = ecs_client.run_task(
+            cluster = config.CLUSTER_NAME,
+            launchType = 'FARGATE',
+            taskDefinition=task_definition_name,
+            count = 1,
+            platformVersion='LATEST',
+            networkConfiguration={
+                'awsvpcConfiguration': {
+                    'subnets': config.SUBNET_IDS.split(","),
+                    'assignPublicIp': 'ENABLED',
+                    'securityGroups': [config.SECURITY_GROUP]
+                    }   
+            },
+            overrides={
+                'containerOverrides': [
+                    {
+                        'name': container_name,
+                        'environment': environment,
+                        'command': command,
+                    },
+                ],
+        })
 
     task_arn = response['tasks'][0]['taskArn']
     container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
