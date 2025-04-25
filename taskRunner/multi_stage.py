@@ -135,7 +135,7 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id)
             workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -168,7 +168,7 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id):
     if config.IS_LOCAL:
         return "local-task-arn","container/task-arn/local"
 
@@ -185,6 +185,20 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
                 'securityGroups': [config.SECURITY_GROUP]
                 }   
         },
+        tags=[
+            {
+                'key': 'WorkflowInstanceId',
+                'value': integration_id
+            },
+            {
+                'key': 'ComputeNode',
+                'value': config.CLUSTER_NAME
+            },
+            {
+                'key': 'Environment',
+                'value': environment
+            }
+        ],
         overrides={
             'containerOverrides': [
                 {
