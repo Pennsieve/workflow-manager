@@ -173,7 +173,7 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         return "local-task-arn","container/task-arn/local"
     
     response = {}
-    if config.config.ENVIRONMENT == 'dev':
+    if config.ENVIRONMENT == 'dev':
         response = ecs_client.run_task(
             cluster = config.CLUSTER_NAME,
             launchType = 'FARGATE',
@@ -211,7 +211,7 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
                 ],
         })
 
-    if config.config.ENVIRONMENT == 'prod':
+    if config.ENVIRONMENT == 'prod':
         response = ecs_client.run_task(
             cluster = config.CLUSTER_NAME,
             launchType = 'FARGATE',
