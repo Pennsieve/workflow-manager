@@ -199,7 +199,11 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
                 {
                     'key': 'Environment',
                     'value': config.ENVIRONMENT
-                }
+                },
+                {
+                    'key': 'Project',
+                    'value': config.CLUSTER_NAME
+                },
             ],
             overrides={
                 'containerOverrides': [
