@@ -179,6 +179,14 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				os.Exit(1)
 			}
 
+			// resourcesDir
+			resourcesDir := fmt.Sprintf("%s/resources", baseDir)
+			err = os.MkdirAll(resourcesDir, 0777)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+
 			// run analysis pipeline
 			nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 			logger.Info("Starting analysis pipeline")
@@ -190,7 +198,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--integrationID", integrationID,
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret,
-				"--workspaceDir", workspaceDir)
+				"--workspaceDir", workspaceDir,
+				"--resourcesDir", resourcesDir)
 			cmd.Dir = "/service"
 			var stdout strings.Builder
 			var stderr strings.Builder

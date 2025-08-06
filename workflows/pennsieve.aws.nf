@@ -37,7 +37,7 @@ process MultiStageWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.apiKey}' '${params.apiSecret}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}'
+    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.apiKey}' '${params.apiSecret}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}' '${params.resourcesDir}'
     """
 }
 
