@@ -31,6 +31,7 @@ def main():
     input_directory = sys.argv[5]
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
+    resources_directory = sys.argv[8]
 
     logger.info("running task runner for workflow instance ID={0}".format(integration_id))
 
@@ -99,6 +100,10 @@ def main():
             {
                 'name': 'OUTPUT_DIR',
                 'value': output_directory
+            },
+            {
+                'name': 'RESOURCES_DIR',
+                'value': resources_directory
             },
             {
                 'name': 'PENNSIEVE_AGENT_HOME',
