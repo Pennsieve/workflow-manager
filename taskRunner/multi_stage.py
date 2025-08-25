@@ -48,6 +48,13 @@ def main():
         writer.writerow(header)
         csvfile.close()
 
+
+    # Sync resources to S3 bucket if RE-JOIN cluster is detected
+    node_identifier = "3178317369"
+    if node_identifier in config.CLUSTER_NAME:
+        logger.info("detected RE-JOIN cluster")
+        sync_resources(sts_client, config.ENVIRONMENT, node_identifier, resources_directory)
+
     for app in workflow:
         session_token = auth_client.authenticate(api_key, api_secret)
 
@@ -299,6 +306,28 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
     try:
         output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
         logger.info(output)
+    except subprocess.CalledProcessError as e:
+        logger.info(f"command failed with return code {e.returncode}")
+
+def sync_resources(sts_client, env, node_identifier, resources_directory):
+    if env == "local":
+        logger.info("local environment detected, skipping s3 sync")
+        return
+
+    account_id = sts_client.get_caller_identity()["Account"]
+    bucket_name = "tfstate-{0}".format(account_id)
+    prefix = "{0}/{1}/resources".format(env, node_identifier)
+
+    try:
+        process = subprocess.Popen(
+            ["aws", "s3", "sync", "s3://{0}/{1}/".format(bucket_name, prefix), resources_directory],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+        for line in process.stdout:
+            print(line, end="")  # real-time streaming
+        process.wait()
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
 
