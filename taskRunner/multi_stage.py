@@ -24,16 +24,32 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    integration_id = sys.argv[1]
+    workflowInstanceId = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
-    workflow = json.loads(sys.argv[4])
+    workflowVersionMappingObject = json.loads(sys.argv[4])
     input_directory = sys.argv[5]
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
 
-    logger.info("running task runner for workflow instance ID={0}".format(integration_id))
+    version = "v1"
+    workflow = []
+
+    if workflowVersionMappingObject['v1'] is not None:
+        logger.info("running v1 workflow")
+        # logger.info(workflow['v1'])
+        workflow = workflowVersionMappingObject['v1']
+
+    if workflowVersionMappingObject['v2'] is not None:
+        version = "v2"
+        logger.info("running v2 workflow")
+        # logger.info(workflow['v2'])
+        # GET workflow using workflowUuid -> GET /workflows/{workflowUuid}
+        # workflow = executionOrder
+        
+
+    logger.info("running task runner for workflow instance ID={0}, version={1}".format(workflowInstanceId, version))
 
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)
@@ -48,6 +64,7 @@ def main():
         writer.writerow(header)
         csvfile.close()
 
+    # v2: # loop through executionOrder and use DAG to determine INPUT_DIR and OUTPUT_DIR
     for app in workflow:
         session_token = auth_client.authenticate(api_key, api_secret)
 
@@ -59,7 +76,7 @@ def main():
         environment = [
             {
                 'name': 'INTEGRATION_ID',
-                'value': integration_id
+                'value': workflowInstanceId
             },
             {
                 'name': 'PENNSIEVE_API_KEY',
@@ -140,8 +157,8 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id)
-            workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'STARTED', now, session_token)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId)
+            workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
@@ -152,22 +169,22 @@ def main():
 
             with open("{0}/processors.csv".format(workspace_directory), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+                data = [[workflowInstanceId, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
 
                 for row in data:
                     writer.writerow(row)
                 csvfile.close()
 
-            sync_logs(sts_client, config, integration_id, workspace_directory)
+            sync_logs(sts_client, config, workflowInstanceId, workspace_directory)
             exit_code = poll_task(ecs_client, config, task_arn)
 
             now = datetime.now(timezone.utc).timestamp()
             session_token = auth_client.authenticate(api_key, api_secret)  # refresh token
             if exit_code == 0:
-                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'SUCCEEDED', now, session_token)
                 logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
             else:
-                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'FAILED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'FAILED', now, session_token)
                 logger.error("error: container_name={0}, application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 

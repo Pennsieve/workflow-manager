@@ -22,7 +22,12 @@ def main():
     now = datetime.now(timezone.utc).timestamp()
     workflow_instance_client.put_workflow_instance_status(workflow_instance_id, 'STARTED', now, session_token)
 
-    print(json.dumps(workflow_instance["workflow"]), end="")
+    workflow = {}
+    workflow["v1"] = workflow_instance.get("workflow")
+    workflow["v2"] = workflow_instance.get("workflowUuid")
+
+    print(json.dumps(workflow), end="")
+
 
 if __name__ == '__main__':
     main()
