@@ -73,7 +73,7 @@ def main():
         session_token = auth_client.authenticate(api_key, api_secret)
 
         input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory)
-        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory))
+        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory)) # TODO: remove
 
         environment = [
             {
@@ -361,7 +361,7 @@ def getRuntimeVariables(version, app, config, session_token, organization_id):
     application_client = ApplicationClient(config.API_HOST2)
     # TODO: refactor so that we return a list of applications
     application = application_client.get_application(app[0], session_token, organization_id)
-    logger.info(application)
+    logger.info(application) # TODO: remove
     container_name = application[0]['applicationContainerName']
     task_definition_name = application[0]['applicationId']
     application_type = application[0]['applicationType']
