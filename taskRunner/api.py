@@ -124,3 +124,60 @@ class WorkflowInstanceClient:
             log.error(f"failed to decode update workflow instance processor status response with error: {e}")
         except Exception as e:
             log.error(f"failed to update workflow instance processor status with error: {e}")
+
+
+class WorkflowClient:
+    def __init__(self, api_host):
+        self.api_host = api_host
+
+    def get_workflow(self, workflowUuid, session_token):
+        url = f"{self.api_host}/workflows/{workflowUuid}"
+
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {session_token}"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            workflow = response.json()
+
+            return workflow
+        except requests.HTTPError as e:
+            log.error(f"failed to fetch workflow with error: {e}")
+            raise e
+        except json.JSONDecodeError as e:
+            log.error(f"failed to decode workflow response with error: {e}")
+            raise e
+        except Exception as e:
+            log.error(f"failed to get workflow with error: {e}")
+            raise e
+        
+class ApplicationClient:
+    def __init__(self, api_host):
+        self.api_host = api_host
+
+    def get_application(self, source_url, session_token, organization_id):
+        url = f"{self.api_host}/applications?organization_id={organization_id}&sourceUrl={source_url}"
+
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {session_token}"
+        }
+
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            workflow = response.json()
+
+            return workflow
+        except requests.HTTPError as e:
+            log.error(f"failed to fetch workflow with error: {e}")
+            raise e
+        except json.JSONDecodeError as e:
+            log.error(f"failed to decode workflow response with error: {e}")
+            raise e
+        except Exception as e:
+            log.error(f"failed to get workflow with error: {e}")
+            raise e        

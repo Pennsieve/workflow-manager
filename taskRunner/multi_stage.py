@@ -7,8 +7,9 @@ import os
 import requests
 import subprocess
 import sys
+import hashlib
 
-from api import AuthenticationClient, WorkflowInstanceClient
+from api import AuthenticationClient, WorkflowInstanceClient, ApplicationClient
 from boto3 import client as boto3_client
 from config import Config
 from datetime import datetime, timezone
@@ -33,21 +34,18 @@ def main():
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
 
-    version = "v1"
+    version = 'v1'
     workflow = []
+    organization_id = ""
 
     if workflowVersionMappingObject['v1'] is not None:
         logger.info("running v1 workflow")
-        # logger.info(workflow['v1'])
         workflow = workflowVersionMappingObject['v1']
 
     if workflowVersionMappingObject['v2'] is not None:
-        version = "v2"
+        version = 'v2'
         logger.info("running v2 workflow")
-        # logger.info(workflow['v2'])
-        # GET workflow using workflowUuid -> GET /workflows/{workflowUuid}
-        # workflow = executionOrder
-        
+        workflow = workflowVersionMappingObject['v2']
 
     logger.info("running task runner for workflow instance ID={0}, version={1}".format(workflowInstanceId, version))
 
@@ -65,13 +63,17 @@ def main():
         csvfile.close()
 
     # v2: # loop through executionOrder and use DAG to determine INPUT_DIR and OUTPUT_DIR
+    if version == 'v2':
+        workflow = workflowVersionMappingObject['v2']['executionOrder']
+        organization_id = workflowVersionMappingObject['v2']['organizationId']
+    else:
+        workflow = workflowVersionMappingObject['v1']
+ 
     for app in workflow:
         session_token = auth_client.authenticate(api_key, api_secret)
 
-        container_name = app['applicationContainerName']
-        task_definition_name = app['applicationId']
-        application_type = app['applicationType']
-        application_uuid = app['uuid']
+        input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory)
+        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory))
 
         environment = [
             {
@@ -140,6 +142,7 @@ def main():
             },
         ]
 
+        # TODO: determine params for v2
         if 'params' in app:
             application_params = app['params']
             for key, value in application_params.items():
@@ -149,10 +152,17 @@ def main():
                 }
                 environment.append(new_param)
 
-        command = app.get('commandArguments', [])
+        # currently not used
+        if version == 'v1':
+            command = app.get('commandArguments', [])
+        else:
+            command = [] 
 
+        # currently supporting one task at a time, not parallel tasks
+        container_name, task_definition_name, application_type, application_uuid = getRuntimeVariables(version, app, config, session_token, organization_id)    
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
+        
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
 
@@ -318,6 +328,47 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
         logger.info(output)
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
+
+def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir):
+    if version == 'v1':
+        return input_dir, output_dir
+    
+    dag = workflowVersionMappingObject['v2']['dag']
+    for a in app:
+        dependencies = dag[a]
+        if len(dependencies) > 0:
+            if len(dependencies) == 1:
+                for dependency in dependencies:
+                    input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
+                    input_dir = os.path.join(input_dir, input_dir_hash[:12])
+                    os.makedirs(input_dir, exist_ok=True)
+            else:
+                logger.error("multiple dependencies not supported yet")
+                sys.exit(1)
+            
+        output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
+        output_dir = os.path.join(output_dir, output_dir_hash[:12])
+        os.makedirs(output_dir, exist_ok=True)
+
+    return input_dir, output_dir             
+
+def getRuntimeVariables(version, app, config, session_token, organization_id):
+    # Placeholder for actual logic to determine runtime variables
+    if version == 'v1':
+        return app['applicationContainerName'], app['applicationId'], app['applicationType'], app['uuid']
+    
+
+    application_client = ApplicationClient(config.API_HOST2)
+    # TODO: refactor so that we return a list of applications
+    application = application_client.get_application(app[0], session_token, organization_id)
+    logger.info(application)
+    container_name = application[0]['applicationContainerName']
+    task_definition_name = application[0]['applicationId']
+    application_type = application[0]['applicationType']
+    application_uuid = application[0]['uuid']
+
+    return container_name, task_definition_name, application_type, application_uuid
+
 
 if __name__ == '__main__':
     main()
