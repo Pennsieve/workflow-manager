@@ -30,6 +30,8 @@ def main():
         workflow_client = WorkflowClient(config.API_HOST2)
         workflow_v2 = workflow_client.get_workflow(workflowUuid, session_token)
         workflowMapperObject["v2"] = workflow_v2
+    else:
+        workflowMapperObject["v2"] = None   
     
     print(json.dumps(workflowMapperObject), end="")
 
