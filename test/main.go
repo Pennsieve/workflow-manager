@@ -65,6 +65,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// workDir
+	workDir := fmt.Sprintf("%s/workDir/%s", baseDir, integrationID)
+	err = os.MkdirAll(outputDir, 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	// run analysis pipeline
 	nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 	logger.Info("Starting analysis pipeline")
@@ -77,7 +85,8 @@ func main() {
 		"--apiKey", apiKey,
 		"--apiSecret", apiSecret,
 		"--workspaceDir", workspaceDir,
-		"--resourcesDir", resourcesDir)
+		"--resourcesDir", resourcesDir,
+		"--workDir", workDir)
 	cmd.Dir = "/service"
 	var stdout strings.Builder
 	var stderr strings.Builder
@@ -114,4 +123,10 @@ func main() {
 			slog.String("error", err.Error()))
 	}
 	log.Printf("Dir %s deleted", outputDir)
+	err = os.RemoveAll(workDir)
+	if err != nil {
+		logger.Error("error deleting files",
+			slog.String("error", err.Error()))
+	}
+	log.Printf("Dir %s deleted", workDir)
 }

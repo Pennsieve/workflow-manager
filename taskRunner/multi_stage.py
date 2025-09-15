@@ -33,6 +33,7 @@ def main():
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
+    work_directory = sys.argv[9]
 
     version = 'v1'
     workflow = []
@@ -72,7 +73,7 @@ def main():
     for app in workflow:
         session_token = auth_client.authenticate(api_key, api_secret)
 
-        input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory)
+        input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory, work_directory)
         logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory)) # TODO: remove
 
         environment = [
@@ -162,7 +163,6 @@ def main():
         container_name, task_definition_name, application_type, application_uuid = getRuntimeVariables(version, app, config, session_token, organization_id)    
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
-        
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
 
@@ -329,10 +329,12 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
 
-def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir):
+def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir, work_dir):
     if version == 'v1':
         return input_dir, output_dir
     
+    v2_input_dir = ""
+    v2_output_dir = ""
     dag = workflowVersionMappingObject['v2']['dag']
     for a in app:
         dependencies = dag[a]
@@ -340,17 +342,17 @@ def setupDirectories(version, app, workflowVersionMappingObject, input_dir, outp
             if len(dependencies) == 1:
                 for dependency in dependencies:
                     input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
-                    input_dir = os.path.join(input_dir, input_dir_hash[:12])
-                    os.makedirs(input_dir, exist_ok=True)
+                    v2_input_dir = os.path.join(work_dir, input_dir_hash[:12])
+                    os.makedirs(v2_input_dir, exist_ok=True)
             else:
                 logger.error("multiple dependencies not supported yet")
                 sys.exit(1)
             
         output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
-        output_dir = os.path.join(output_dir, output_dir_hash[:12])
-        os.makedirs(output_dir, exist_ok=True)
+        v2_output_dir = os.path.join(work_dir, output_dir_hash[:12])
+        os.makedirs(v2_output_dir, exist_ok=True)
 
-    return input_dir, output_dir             
+    return v2_input_dir, v2_output_dir             
 
 def getRuntimeVariables(version, app, config, session_token, organization_id):
     # Placeholder for actual logic to determine runtime variables
