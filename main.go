@@ -64,6 +64,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	err = os.MkdirAll("workdir", 0777)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+	err = os.Chown("workdir", 1000, 1000)
+	if err != nil {
+		logger.Error(err.Error())
+		os.Exit(1)
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Fatalf("LoadDefaultConfig: %v\n", err)
@@ -187,6 +198,14 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				os.Exit(1)
 			}
 
+			// workDir
+			workDir := fmt.Sprintf("%s/workDir/%s", baseDir, integrationID)
+			err = os.MkdirAll(outputDir, 0777)
+			if err != nil {
+				logger.Error(err.Error())
+				os.Exit(1)
+			}
+
 			// run analysis pipeline
 			nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 			logger.Info("Starting analysis pipeline")
@@ -199,7 +218,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--apiKey", newMsg.ApiKey,
 				"--apiSecret", newMsg.ApiSecret,
 				"--workspaceDir", workspaceDir,
-				"--resourcesDir", resourcesDir)
+				"--resourcesDir", resourcesDir,
+				"--workDir", workDir)
 			cmd.Dir = "/service"
 			var stdout strings.Builder
 			var stderr strings.Builder
@@ -236,6 +256,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", err.Error()))
 			}
 			log.Printf("Dir %s deleted", outputDir)
+
+			err = os.RemoveAll(workDir)
+			if err != nil {
+				logger.Error("error deleting files",
+					slog.String("error", err.Error()))
+			}
+			log.Printf("Dir %s deleted", workDir)
 
 			logger.Info("starting message deletion")
 			// delete message
