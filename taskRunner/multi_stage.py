@@ -7,8 +7,9 @@ import os
 import requests
 import subprocess
 import sys
+import hashlib
 
-from api import AuthenticationClient, WorkflowInstanceClient
+from api import AuthenticationClient, WorkflowInstanceClient, ApplicationClient
 from boto3 import client as boto3_client
 from config import Config
 from datetime import datetime, timezone
@@ -24,16 +25,29 @@ def main():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-    integration_id = sys.argv[1]
+    workflowInstanceId = sys.argv[1]
     api_key = sys.argv[2]
     api_secret = sys.argv[3]
-    workflow = json.loads(sys.argv[4])
+    workflowVersionMappingObject = json.loads(sys.argv[4])
     input_directory = sys.argv[5]
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
 
-    logger.info("running task runner for workflow instance ID={0}".format(integration_id))
+    version = 'v1'
+    workflow = []
+    organization_id = ""
+
+    if workflowVersionMappingObject['v1'] is not None:
+        logger.info("running v1 workflow")
+        workflow = workflowVersionMappingObject['v1']
+
+    if workflowVersionMappingObject['v2'] is not None:
+        version = 'v2'
+        logger.info("running v2 workflow")
+        workflow = workflowVersionMappingObject['v2']
+
+    logger.info("running task runner for workflow instance ID={0}, version={1}".format(workflowInstanceId, version))
 
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)
@@ -48,18 +62,23 @@ def main():
         writer.writerow(header)
         csvfile.close()
 
+    # v2: # loop through executionOrder and use DAG to determine INPUT_DIR and OUTPUT_DIR
+    if version == 'v2':
+        workflow = workflowVersionMappingObject['v2']['executionOrder']
+        organization_id = workflowVersionMappingObject['v2']['organizationId']
+    else:
+        workflow = workflowVersionMappingObject['v1']
+ 
     for app in workflow:
         session_token = auth_client.authenticate(api_key, api_secret)
 
-        container_name = app['applicationContainerName']
-        task_definition_name = app['applicationId']
-        application_type = app['applicationType']
-        application_uuid = app['uuid']
+        input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory)
+        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory)) # TODO: remove
 
         environment = [
             {
                 'name': 'INTEGRATION_ID',
-                'value': integration_id
+                'value': workflowInstanceId
             },
             {
                 'name': 'PENNSIEVE_API_KEY',
@@ -123,6 +142,7 @@ def main():
             },
         ]
 
+        # TODO: determine params for v2
         if 'params' in app:
             application_params = app['params']
             for key, value in application_params.items():
@@ -132,16 +152,23 @@ def main():
                 }
                 environment.append(new_param)
 
-        command = app.get('commandArguments', [])
+        # currently not used
+        if version == 'v1':
+            command = app.get('commandArguments', [])
+        else:
+            command = [] 
 
+        # currently supporting one task at a time, not parallel tasks
+        container_name, task_definition_name, application_type, application_uuid = getRuntimeVariables(version, app, config, session_token, organization_id)    
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
+        
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id)
-            workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'STARTED', now, session_token)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId)
+            workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
@@ -152,22 +179,22 @@ def main():
 
             with open("{0}/processors.csv".format(workspace_directory), 'a', newline='') as csvfile:
                 writer = csv.writer(csvfile)
-                data = [[integration_id, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
+                data = [[workflowInstanceId, task_id, log_group_name, log_stream_name, application_uuid, container_name, application_type]]
 
                 for row in data:
                     writer.writerow(row)
                 csvfile.close()
 
-            sync_logs(sts_client, config, integration_id, workspace_directory)
+            sync_logs(sts_client, config, workflowInstanceId, workspace_directory)
             exit_code = poll_task(ecs_client, config, task_arn)
 
             now = datetime.now(timezone.utc).timestamp()
             session_token = auth_client.authenticate(api_key, api_secret)  # refresh token
             if exit_code == 0:
-                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'SUCCEEDED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'SUCCEEDED', now, session_token)
                 logger.info("success: container_name={0}, application_type={1}".format(container_name, application_type))
             else:
-                workflow_instance_client.put_workflow_instance_processor_status(integration_id, application_uuid, 'FAILED', now, session_token)
+                workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'FAILED', now, session_token)
                 logger.error("error: container_name={0}, application_type={1}".format(container_name, application_type))
                 sys.exit(1)
 
@@ -301,6 +328,47 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
         logger.info(output)
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
+
+def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir):
+    if version == 'v1':
+        return input_dir, output_dir
+    
+    dag = workflowVersionMappingObject['v2']['dag']
+    for a in app:
+        dependencies = dag[a]
+        if len(dependencies) > 0:
+            if len(dependencies) == 1:
+                for dependency in dependencies:
+                    input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
+                    input_dir = os.path.join(input_dir, input_dir_hash[:12])
+                    os.makedirs(input_dir, exist_ok=True)
+            else:
+                logger.error("multiple dependencies not supported yet")
+                sys.exit(1)
+            
+        output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
+        output_dir = os.path.join(output_dir, output_dir_hash[:12])
+        os.makedirs(output_dir, exist_ok=True)
+
+    return input_dir, output_dir             
+
+def getRuntimeVariables(version, app, config, session_token, organization_id):
+    # Placeholder for actual logic to determine runtime variables
+    if version == 'v1':
+        return app['applicationContainerName'], app['applicationId'], app['applicationType'], app['uuid']
+    
+
+    application_client = ApplicationClient(config.API_HOST2)
+    # TODO: refactor so that we return a list of applications
+    application = application_client.get_application(app[0], session_token, organization_id)
+    logger.info(application) # TODO: remove
+    container_name = application[0]['applicationContainerName']
+    task_definition_name = application[0]['applicationId']
+    application_type = application[0]['applicationType']
+    application_uuid = application[0]['uuid']
+
+    return container_name, task_definition_name, application_type, application_uuid
+
 
 if __name__ == '__main__':
     main()

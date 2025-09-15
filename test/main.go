@@ -97,6 +97,7 @@ func main() {
 			slog.String("nextflowLog", nextflowLog))
 	}
 
+	logger.Info("stdout", slog.String("message", stdout.String()))
 	logger.Info("after nextflow command run")
 
 	logger.Info("starting cleanup")
