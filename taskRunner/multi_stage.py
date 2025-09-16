@@ -342,7 +342,7 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
 
     try:
         output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
-        # logger.info(output)
+        logger.info(output)
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
 
