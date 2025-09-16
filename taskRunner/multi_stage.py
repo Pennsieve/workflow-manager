@@ -168,7 +168,7 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, application_type, logger)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -201,21 +201,24 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, application_type, logger):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app):
     if config.IS_LOCAL:
-        # logger.info("input_dir: ", input_dir)
-        # logger.info("output_dir: ", output_dir)
+        if version == 'v2':
+            print(f"copying files from {input_dir} to {output_dir}")
+            dag = workflowVersionMappingObject['v2']['dag']
 
-        print(f"copying files from {input_dir} to {output_dir}")
-        print("\n")
-        
-        if application_type == 'preprocessor':
-            with open(f'{input_dir}/static-file.txt', "w") as file:
-                file.write("Your text goes here")
+            logger.info("initialise data") 
+            for a in app:
+                dependencies = dag[a]
+                if len(dependencies) == 0:
+                    with open(f'{input_dir}/test-file.txt', "w") as file:
+                        file.write(f'Processing started by application: {a}')
 
-        shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
-        return "local-task-arn","container/task-arn/local"
-    
+            with open(f'{input_dir}/test-file.txt', "w") as file:
+                file.write(f'Processed by application: {a}')
+            shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
+            return "local-task-arn","container/task-arn/local"
+
     response = {}
     if config.ENVIRONMENT == 'dev':
         response = ecs_client.run_task(
@@ -342,8 +345,8 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
         logger.info(f"command failed with return code {e.returncode}")
 
 def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir, work_dir):
-    # if version == 'v1':
-    #     return input_dir, output_dir
+    if version == 'v1':
+        return input_dir, output_dir
     
     logger.info(f"setting up directories for version: {version}, app: {app}")
 
@@ -383,7 +386,6 @@ def getRuntimeVariables(version, app, config, session_token, organization_id):
     if version == 'v1':
         return app['applicationContainerName'], app['applicationId'], app['applicationType'], app['uuid']
     
-
     application_client = ApplicationClient(config.API_HOST2)
     # TODO: refactor so that we return a list of applications
     application = application_client.get_application(app[0], session_token, organization_id)
