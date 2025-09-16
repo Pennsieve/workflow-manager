@@ -217,7 +217,9 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
             with open(f'{input_dir}/test-file.txt', "w") as file:
                 file.write(f'Processed by application: {a}')
             shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
-            return "local-task-arn","container/task-arn/local"
+            
+        return "local-task-arn","container/task-arn/local"
+        
 
     response = {}
     if config.ENVIRONMENT == 'dev':
