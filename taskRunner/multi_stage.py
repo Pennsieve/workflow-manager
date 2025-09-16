@@ -211,12 +211,12 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
             for a in app:
                 dependencies = dag[a]
                 if len(dependencies) == 0:
-                    with open(f'{input_dir}/test-file.txt', "w") as file:
-                        file.write(f'Processing started by application: {a}')
-
-            with open(f'{input_dir}/test-file.txt', "w") as file:
-                file.write(f'Processed by application: {a}')
-            shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
+                    with open(f'{output_dir}/test-file.txt', "w") as file:
+                        file.write(f'Initialisation started by application: {a}')
+                else:
+                    shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
+                    with open(f'{output_dir}/test-file.txt', "w") as file:
+                        file.write(f'Processed by application: {a}')
             
         return "local-task-arn","container/task-arn/local"
         
@@ -358,28 +358,21 @@ def setupDirectories(version, app, workflowVersionMappingObject, input_dir, outp
     logger.info("determining input directory") 
     for a in app:
         dependencies = dag[a]
-
+        # for now, only support one dependency
+        # applications with no dependencies will have input_dir as ""
         if len(dependencies) > 0:
             if len(dependencies) == 1:
                 for dependency in dependencies:
                     input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
-                    v2_input_dir = f'{os.path.join(work_dir, input_dir_hash[:12])}/output'
+                    v2_input_dir = os.path.join(work_dir, input_dir_hash[:12])
                     os.makedirs(v2_input_dir, exist_ok=True)
             else:
                 logger.error("multiple dependencies not supported yet")
                 sys.exit(1)
-        else:
-            input_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
-            v2_input_dir = f'{os.path.join(work_dir, input_dir_hash[:12])}/input'
-            os.makedirs(v2_input_dir, exist_ok=True)
 
-    logger.info("determining input directory - done")            
-
-    logger.info("determining output directory")    
-    output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
-    v2_output_dir = f'{os.path.join(work_dir, output_dir_hash[:12])}/output'
-    os.makedirs(v2_output_dir, exist_ok=True)
-    logger.info(f"v2_output_dir: {v2_output_dir}")
+        output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
+        v2_output_dir = os.path.join(work_dir, output_dir_hash[:12])
+        os.makedirs(v2_output_dir, exist_ok=True)
 
     return v2_input_dir, v2_output_dir             
 
