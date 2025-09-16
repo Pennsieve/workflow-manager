@@ -8,6 +8,7 @@ import requests
 import subprocess
 import sys
 import hashlib
+import shutil
 
 from api import AuthenticationClient, WorkflowInstanceClient, ApplicationClient
 from boto3 import client as boto3_client
@@ -167,7 +168,7 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -200,10 +201,26 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app):
     if config.IS_LOCAL:
+        if version == 'v2':
+            print(f"copying files from {input_dir} to {output_dir}")
+            dag = workflowVersionMappingObject['v2']['dag']
+
+            logger.info("initialise data") 
+            for a in app:
+                dependencies = dag[a]
+                if len(dependencies) == 0:
+                    with open(f'{input_dir}/test-file.txt', "w") as file:
+                        file.write(f'Processing started by application: {a}')
+
+            with open(f'{input_dir}/test-file.txt', "w") as file:
+                file.write(f'Processed by application: {a}')
+            shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
+            
         return "local-task-arn","container/task-arn/local"
-    
+        
+
     response = {}
     if config.ENVIRONMENT == 'dev':
         response = ecs_client.run_task(
@@ -325,7 +342,7 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
 
     try:
         output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
-        logger.info(output)
+        # logger.info(output)
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
 
@@ -333,24 +350,36 @@ def setupDirectories(version, app, workflowVersionMappingObject, input_dir, outp
     if version == 'v1':
         return input_dir, output_dir
     
+    logger.info(f"setting up directories for version: {version}, app: {app}")
+
     v2_input_dir = ""
     v2_output_dir = ""
     dag = workflowVersionMappingObject['v2']['dag']
+    logger.info("determining input directory") 
     for a in app:
         dependencies = dag[a]
+
         if len(dependencies) > 0:
             if len(dependencies) == 1:
                 for dependency in dependencies:
                     input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
-                    v2_input_dir = os.path.join(work_dir, input_dir_hash[:12])
+                    v2_input_dir = f'{os.path.join(work_dir, input_dir_hash[:12])}/output'
                     os.makedirs(v2_input_dir, exist_ok=True)
             else:
                 logger.error("multiple dependencies not supported yet")
                 sys.exit(1)
-            
-        output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
-        v2_output_dir = os.path.join(work_dir, output_dir_hash[:12])
-        os.makedirs(v2_output_dir, exist_ok=True)
+        else:
+            input_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
+            v2_input_dir = f'{os.path.join(work_dir, input_dir_hash[:12])}/input'
+            os.makedirs(v2_input_dir, exist_ok=True)
+
+    logger.info("determining input directory - done")            
+
+    logger.info("determining output directory")    
+    output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
+    v2_output_dir = f'{os.path.join(work_dir, output_dir_hash[:12])}/output'
+    os.makedirs(v2_output_dir, exist_ok=True)
+    logger.info(f"v2_output_dir: {v2_output_dir}")
 
     return v2_input_dir, v2_output_dir             
 
@@ -359,11 +388,9 @@ def getRuntimeVariables(version, app, config, session_token, organization_id):
     if version == 'v1':
         return app['applicationContainerName'], app['applicationId'], app['applicationType'], app['uuid']
     
-
     application_client = ApplicationClient(config.API_HOST2)
     # TODO: refactor so that we return a list of applications
     application = application_client.get_application(app[0], session_token, organization_id)
-    logger.info(application) # TODO: remove
     container_name = application[0]['applicationContainerName']
     task_definition_name = application[0]['applicationId']
     application_type = application[0]['applicationType']
