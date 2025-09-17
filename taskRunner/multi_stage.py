@@ -160,8 +160,13 @@ def main():
         else:
             command = [] 
 
+        apps = getRuntimeVariables(version, app, config, session_token, organization_id) # apps to run in parallel for v2
         # currently supporting one task at a time, not parallel tasks
-        container_name, task_definition_name, application_type, application_uuid = getRuntimeVariables(version, app, config, session_token, organization_id)    
+        if version == 'v1':
+            container_name, task_definition_name, application_type, application_uuid = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid']
+        else:
+            container_name, task_definition_name, application_type, application_uuid = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid']
+            
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
@@ -379,17 +384,17 @@ def setupDirectories(version, app, workflowVersionMappingObject, input_dir, outp
 def getRuntimeVariables(version, app, config, session_token, organization_id):
     # Placeholder for actual logic to determine runtime variables
     if version == 'v1':
-        return app['applicationContainerName'], app['applicationId'], app['applicationType'], app['uuid']
+        return app
     
-    application_client = ApplicationClient(config.API_HOST2)
-    # TODO: refactor so that we return a list of applications
-    application = application_client.get_application(app[0], session_token, organization_id)
-    container_name = application[0]['applicationContainerName']
-    task_definition_name = application[0]['applicationId']
-    application_type = application[0]['applicationType']
-    application_uuid = application[0]['uuid']
+    applications = []
+    # for v2 app is a list of applications to run in parallel
+    for a in app:
+        logger.info(f"fetching application details for: {a}")
+        application_client = ApplicationClient(config.API_HOST2)
+        application = application_client.get_application(a, session_token, organization_id)
+        applications.append(application[0])
 
-    return container_name, task_definition_name, application_type, application_uuid
+    return applications
 
 
 if __name__ == '__main__':
