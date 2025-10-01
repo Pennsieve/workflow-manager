@@ -19,8 +19,8 @@ def main():
     workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
     workflow_instance = workflow_instance_client.get_workflow_instance(workflow_instance_id, session_token)
 
-    now = datetime.now(timezone.utc).timestamp()
-    workflow_instance_client.put_workflow_instance_status(workflow_instance_id, 'STARTED', now, session_token)
+    # now = datetime.now(timezone.utc).timestamp()
+    # workflow_instance_client.put_workflow_instance_status(workflow_instance_id, 'STARTED', now, session_token)
 
     workflowMapperObject = {}
     workflowMapperObject["v1"] = workflow_instance.get("workflow")
