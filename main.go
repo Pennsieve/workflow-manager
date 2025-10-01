@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,12 +16,15 @@ import (
 	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
+	providerTypes "github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 )
 
 const (
-	visibilityTimeout = 4320 * 10
+	visibilityTimeout = 1
 	waitingTimeout    = 20
 )
 
@@ -149,6 +154,58 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		}
 
 		log.Printf("message id %s is received from SQS: %#v", id, newMsg.IntegrationID)
+
+		// check workflow instance status in DB
+		// if running, skip processing this message
+		// if not running, continue processing
+		environment := os.Getenv("ENVIRONMENT")
+		var apiHost string
+		var apiHost2 string
+
+		if environment == "local" || environment == "dev" {
+			apiHost = "https://api.pennsieve.net"
+			apiHost2 = "https://api2.pennsieve.net"
+
+		} else {
+			apiHost = "https://api.pennsieve.io"
+			apiHost2 = "https://api2.pennsieve.io"
+		}
+
+		client := &Client{apiHost: apiHost}
+		sessionToken, err := client.Authenticate(newMsg.ApiKey, newMsg.ApiSecret)
+		if err != nil {
+			log.Printf("Authentication failed: %v", err)
+			logger.Error(err.Error())
+		}
+		log.Printf("session token: %s", sessionToken)
+
+		workflowInstanceResponse, err := getIntegration(apiHost2, newMsg.IntegrationID, sessionToken)
+		if err != nil {
+			logger.Error(err.Error())
+		}
+
+		var workflowInstance WorkflowInstance
+		if err := json.Unmarshal(workflowInstanceResponse, &workflowInstance); err != nil {
+			logger.Error(err.Error())
+		}
+		fmt.Println(workflowInstance)
+
+		if workflowInstance.Status == "STARTED" || workflowInstance.Status == "SUCCEEDED" {
+			// This is a retry after 12 hours, but job already processed
+			logger.Info("job already processed, deleting message",
+				slog.String("integrationID", newMsg.IntegrationID),
+				slog.String("status", workflowInstance.Status))
+
+			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
+				QueueUrl:      &queueUrl,
+				ReceiptHandle: msg.ReceiptHandle,
+			})
+			if err != nil {
+				logger.Error("error deleting message",
+					slog.String("error", err.Error()))
+			}
+			continue
+		}
 
 		go func(msg types.Message) {
 			logger.Info("Initializing workspace ...")
@@ -280,4 +337,101 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 	}
 	return true, nil
+}
+
+type WorkflowInstance struct {
+	Uuid   string `json:"uuid"`
+	Status string `json:"status"`
+}
+
+func getIntegration(apiHost string, integrationId string, sessionToken string) ([]byte, error) {
+	url := fmt.Sprintf("%s/integrations/%s", apiHost, integrationId)
+
+	req, _ := http.NewRequest("GET", url, nil)
+
+	req.Header.Add("accept", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", sessionToken))
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+
+	return body, nil
+}
+
+type Client struct {
+	apiHost string
+	// other fields...
+}
+
+func (c *Client) Authenticate(apiKey, apiSecret string) (string, error) {
+	url := fmt.Sprintf("%s/authentication/cognito-config", c.apiHost)
+
+	// Get cognito config
+	resp, err := http.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to reach authentication server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("failed to reach authentication server with status: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Parse JSON response
+	var data struct {
+		TokenPool struct {
+			AppClientID string `json:"appClientId"`
+		} `json:"tokenPool"`
+		Region string `json:"region"`
+	}
+
+	if err := json.Unmarshal(body, &data); err != nil {
+		return "", fmt.Errorf("failed to decode authentication response: %w", err)
+	}
+
+	cognitoAppClientID := data.TokenPool.AppClientID
+	cognitoRegion := data.Region
+
+	// Create Cognito IDP client
+	cfg, err := config.LoadDefaultConfig(context.Background(),
+		config.WithRegion(cognitoRegion),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider("", "", "")),
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to load AWS config: %w", err)
+	}
+
+	cognitoClient := cognitoidentityprovider.NewFromConfig(cfg)
+
+	// Initiate authentication
+	authFlow := providerTypes.AuthFlowTypeUserPasswordAuth
+	loginResponse, err := cognitoClient.InitiateAuth(context.Background(), &cognitoidentityprovider.InitiateAuthInput{
+		AuthFlow: authFlow,
+		AuthParameters: map[string]string{
+			"USERNAME": apiKey,
+			"PASSWORD": apiSecret,
+		},
+		ClientId: &cognitoAppClientID,
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to authenticate: %w", err)
+	}
+
+	if loginResponse.AuthenticationResult == nil || loginResponse.AuthenticationResult.AccessToken == nil {
+		return "", fmt.Errorf("authentication result is nil")
+	}
+
+	accessToken := *loginResponse.AuthenticationResult.AccessToken
+	return accessToken, nil
 }
