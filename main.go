@@ -193,7 +193,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		if workflowInstance.Status == "STARTED" || workflowInstance.Status == "SUCCEEDED" {
 			// This is a retry after 12 hours, but job already processed
 			logger.Info("job already processed, deleting message",
-				slog.String("integrationID", newMsg.IntegrationID),
+				slog.String("workflowInstanceId", newMsg.IntegrationID),
 				slog.String("status", workflowInstance.Status))
 
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
@@ -344,8 +344,8 @@ type WorkflowInstance struct {
 	Status string `json:"status"`
 }
 
-func getIntegration(apiHost string, integrationId string, sessionToken string) ([]byte, error) {
-	url := fmt.Sprintf("%s/integrations/%s", apiHost, integrationId)
+func getIntegration(apiHost string, workflowInstanceId string, sessionToken string) ([]byte, error) {
+	url := fmt.Sprintf("%s/workflows/instances/%s", apiHost, workflowInstanceId)
 
 	req, _ := http.NewRequest("GET", url, nil)
 
