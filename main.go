@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -14,6 +15,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -24,7 +26,7 @@ import (
 )
 
 const (
-	visibilityTimeout = 1
+	visibilityTimeout = 5
 	waitingTimeout    = 20
 )
 
@@ -205,6 +207,24 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", err.Error()))
 			}
 			continue
+		} else {
+			logger.Info("job not started yet, processing message and setting status to STARTED",
+				slog.String("workflowInstanceId", newMsg.IntegrationID),
+				slog.String("status", workflowInstance.Status))
+
+			// Update workflow status to "started"
+			_, err = putWorkflowInstanceStatus(
+				apiHost,
+				newMsg.IntegrationID,
+				"STARTED",
+				time.Now().Unix(),
+				sessionToken,
+			)
+			if err != nil {
+				logger.Error("failed to update workflow status to started",
+					slog.String("error", err.Error()))
+			}
+
 		}
 
 		go func(msg types.Message) {
@@ -350,6 +370,32 @@ func getIntegration(apiHost string, workflowInstanceId string, sessionToken stri
 	req, _ := http.NewRequest("GET", url, nil)
 
 	req.Header.Add("accept", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", sessionToken))
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+
+	return body, nil
+}
+
+func putWorkflowInstanceStatus(apiHost string, workflowInstanceId string, status string, timestamp int64, sessionToken string) ([]byte, error) {
+	url := fmt.Sprintf("%s/workflows/instances/%s/status", apiHost, workflowInstanceId)
+
+	requestBody := map[string]interface{}{
+		"status":    status,
+		"timestamp": timestamp,
+	}
+
+	jsonBody, _ := json.Marshal(requestBody)
+
+	req, _ := http.NewRequest("PUT", url, bytes.NewBuffer(jsonBody))
+
+	req.Header.Add("Content-Type", "application/json")
 	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", sessionToken))
 
 	res, err := http.DefaultClient.Do(req)
