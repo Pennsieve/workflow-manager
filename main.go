@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	visibilityTimeout = 5
+	visibilityTimeout = 10
 	waitingTimeout    = 20
 )
 
@@ -207,7 +207,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 					slog.String("error", err.Error()))
 			}
 			continue
-		} else {
+		}
+
+		if workflowInstance.Status == "NOT_STARTED" {
 			logger.Info("job not started yet, processing message and setting status to STARTED",
 				slog.String("workflowInstanceId", newMsg.IntegrationID),
 				slog.String("status", workflowInstance.Status))
@@ -224,7 +226,6 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				logger.Error("failed to update workflow status to started",
 					slog.String("error", err.Error()))
 			}
-
 		}
 
 		go func(msg types.Message) {
