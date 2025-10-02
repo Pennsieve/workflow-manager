@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	visibilityTimeout = 720 * 10 // 2 hours
+	visibilityTimeout = 4320 * 10 // 12 hours
 	waitingTimeout    = 20
 )
 
@@ -179,7 +179,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			log.Printf("Authentication failed: %v", err)
 			logger.Error(err.Error())
 		}
-		log.Printf("session token: %s", sessionToken)
+		// log.Printf("session token: %s", sessionToken)
 
 		workflowInstanceResponse, err := getIntegration(apiHost2, newMsg.IntegrationID, sessionToken)
 		if err != nil {
