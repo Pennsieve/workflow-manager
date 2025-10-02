@@ -216,7 +216,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 
 			// Update workflow status to "started"
 			_, err = putWorkflowInstanceStatus(
-				apiHost,
+				apiHost2,
 				newMsg.IntegrationID,
 				"STARTED",
 				time.Now().Unix(),
