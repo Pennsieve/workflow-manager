@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	visibilityTimeout = 4320 * 10 // 12 hours
+	visibilityTimeout = 720 * 10 // 12 hours
 	waitingTimeout    = 20
 )
 
