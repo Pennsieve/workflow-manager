@@ -227,11 +227,12 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         
 
     response = {}
+    family_name = task_definition_name.split('/')[-1].split(':')[0]
     if config.ENVIRONMENT == 'dev':
         response = ecs_client.run_task(
             cluster = config.CLUSTER_NAME,
             launchType = 'FARGATE',
-            taskDefinition=task_definition_name,
+            taskDefinition=family_name,
             count = 1,
             platformVersion='LATEST',
             networkConfiguration={
@@ -273,7 +274,7 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         response = ecs_client.run_task(
             cluster = config.CLUSTER_NAME,
             launchType = 'FARGATE',
-            taskDefinition=task_definition_name,
+            taskDefinition=family_name,
             count = 1,
             platformVersion='LATEST',
             networkConfiguration={
