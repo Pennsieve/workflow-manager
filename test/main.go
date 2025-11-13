@@ -17,8 +17,8 @@ func main() {
 	log.Println("Welcome to the WorkflowManager")
 	log.Println("Starting pipeline")
 	integrationID := os.Getenv("INTEGRATION_ID")
-	apiKey := os.Getenv("PENNSIEVE_API_KEY")
-	apiSecret := os.Getenv("PENNSIEVE_API_SECRET")
+	sessionToken := os.Getenv("SESSION_TOKEN")
+	refreshToken := os.Getenv("REFRESH_TOKEN")
 
 	logger.Info("Initializing workspace ...")
 	baseDir := os.Getenv("BASE_DIR")
@@ -82,8 +82,8 @@ func main() {
 		"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
 		"-w", workspaceDir,
 		"--integrationID", integrationID,
-		"--apiKey", apiKey,
-		"--apiSecret", apiSecret,
+		"--sessionToken", sessionToken,
+		"--refreshToken", refreshToken,
 		"--workspaceDir", workspaceDir,
 		"--resourcesDir", resourcesDir,
 		"--workDir", workDir)
