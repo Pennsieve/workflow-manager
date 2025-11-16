@@ -7,14 +7,19 @@ import logging
 
 from api import AuthenticationClient, WorkflowInstanceClient
 from config import Config
-from logger import WorkflowManagerLogger
 from datetime import datetime, timezone
 
 logger = logging.getLogger('WorkflowManager')
 
 def main():
     # Setup logging
-    logger = WorkflowManagerLogger()
+    logger.setLevel(logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+
     config = Config()
 
     workflow_instance_id = sys.argv[1]
@@ -24,7 +29,7 @@ def main():
     auth_client = AuthenticationClient(config.API_HOST)
     workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
 
-    session_token = auth_client.refresh_token(refresh_token)
+    session_token = auth_client.refresh_token(refresh_token, session_token=session_token)
     workflow_instance_client.put_workflow_instance_status(
         workflow_instance_id,
         'SUCCEEDED',
