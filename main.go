@@ -123,8 +123,8 @@ loop:
 
 type MsgType struct {
 	IntegrationID string `json:"integrationId"`
-	ApiKey        string `json:"api_key"`
-	ApiSecret     string `json:"api_secret"`
+	SessionToken  string `json:"session_token"`
+	RefreshToken  string `json:"refresh_token"`
 }
 
 func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger *slog.Logger) (bool, error) {
@@ -161,27 +161,16 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		// if running, skip processing this message
 		// if not running, continue processing
 		environment := os.Getenv("ENVIRONMENT")
-		var apiHost string
 		var apiHost2 string
 
 		if environment == "local" || environment == "dev" {
-			apiHost = "https://api.pennsieve.net"
 			apiHost2 = "https://api2.pennsieve.net"
 
 		} else {
-			apiHost = "https://api.pennsieve.io"
 			apiHost2 = "https://api2.pennsieve.io"
 		}
 
-		client := &Client{apiHost: apiHost}
-		sessionToken, err := client.Authenticate(newMsg.ApiKey, newMsg.ApiSecret)
-		if err != nil {
-			log.Printf("Authentication failed: %v", err)
-			logger.Error(err.Error())
-		}
-		// log.Printf("session token: %s", sessionToken)
-
-		workflowInstanceResponse, err := getIntegration(apiHost2, newMsg.IntegrationID, sessionToken)
+		workflowInstanceResponse, err := getIntegration(apiHost2, newMsg.IntegrationID, newMsg.SessionToken)
 		if err != nil {
 			logger.Error(err.Error())
 		}
@@ -220,7 +209,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				newMsg.IntegrationID,
 				"STARTED",
 				time.Now().Unix(),
-				sessionToken,
+				newMsg.SessionToken,
 			)
 			if err != nil {
 				logger.Error("failed to update workflow status to started",
@@ -293,8 +282,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
-				"--apiKey", newMsg.ApiKey,
-				"--apiSecret", newMsg.ApiSecret,
+				"--sessionToken", newMsg.SessionToken,
+				"--refreshToken", newMsg.RefreshToken,
 				"--workspaceDir", workspaceDir,
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)

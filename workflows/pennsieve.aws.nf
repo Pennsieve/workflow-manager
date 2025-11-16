@@ -21,7 +21,7 @@ process InitWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/init.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+    python3.9 /service/taskRunner/init.py ${params.integrationID} ${params.sessionToken} '${params.workspaceDir}' '${params.resourcesDir}' '${params.workDir}'
     """
 }
 
@@ -37,7 +37,7 @@ process MultiStageWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.apiKey}' '${params.apiSecret}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}' '${params.resourcesDir}' '${params.workDir}'
+    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.sessionToken}' '${params.refreshToken}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}' '${params.resourcesDir}' '${params.workDir}'
     """
 }
 
@@ -51,7 +51,7 @@ process FinaliseWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.apiKey} ${params.apiSecret}
+    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.sessionToken} ${params.refreshToken}
     """
 }
 
