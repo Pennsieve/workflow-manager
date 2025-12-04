@@ -163,9 +163,9 @@ def main():
         apps = getRuntimeVariables(version, app, config, session_token, organization_id) # apps to run in parallel for v2
         # currently supporting one task at a time, not parallel tasks
         if version == 'v1':
-            container_name, task_definition_name, application_type, application_uuid = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid']
+            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps['runOnGPU']
         else:
-            container_name, task_definition_name, application_type, application_uuid = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid']
+            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps['runOnGPU']
             
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
@@ -173,7 +173,7 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, gpu_capacity_provision)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -206,7 +206,7 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app, gpu_capacity_provision):
     if config.IS_LOCAL:
         if version == 'v2':
             print(f"copying files from {input_dir} to {output_dir}")
@@ -226,72 +226,64 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         return "local-task-arn","container/task-arn/local"
         
 
-    response = {}
-    if config.ENVIRONMENT == 'dev':
-        response = ecs_client.run_task(
-            cluster = config.CLUSTER_NAME,
-            launchType = 'FARGATE',
-            taskDefinition=container_name,
-            count = 1,
-            platformVersion='LATEST',
-            networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': config.SUBNET_IDS.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [config.SECURITY_GROUP]
-                    }   
-            },
-            tags=[
+    # Base run_task parameters
+    run_task_params = {
+        'cluster': config.CLUSTER_NAME,
+        'taskDefinition': container_name,
+        'count': 1,
+        'networkConfiguration': {
+            'awsvpcConfiguration': {
+                'subnets': config.SUBNET_IDS.split(","),
+                'assignPublicIp': 'ENABLED',
+                'securityGroups': [config.SECURITY_GROUP]
+            }
+        },
+        'overrides': {
+            'containerOverrides': [
                 {
-                    'key': 'WorkflowInstanceId',
-                    'value': integration_id
-                },
-                {
-                    'key': 'ComputeNode',
-                    'value': config.CLUSTER_NAME
-                },
-                {
-                    'key': 'Environment',
-                    'value': config.ENVIRONMENT
-                },
-                {
-                    'key': 'Project',
-                    'value': config.CLUSTER_NAME
+                    'name': container_name,
+                    'environment': environment,
+                    'command': command,
                 },
             ],
-            overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': environment,
-                        'command': command,
-                    },
-                ],
-        })
+        }
+    }
 
-    if config.ENVIRONMENT == 'prod':
-        response = ecs_client.run_task(
-            cluster = config.CLUSTER_NAME,
-            launchType = 'FARGATE',
-            taskDefinition=container_name,
-            count = 1,
-            platformVersion='LATEST',
-            networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': config.SUBNET_IDS.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [config.SECURITY_GROUP]
-                    }   
+    # Use GPU capacity provider or Fargate based on gpu_capacity_provision
+    if gpu_capacity_provision:
+        run_task_params['capacityProviderStrategy'] = [
+            {
+                'capacityProvider': config.GPU_CAPACITY_PROVIDER,
+                'weight': 1,
+                'base': 0
+            }
+        ]
+    else:
+        run_task_params['launchType'] = 'FARGATE'
+        run_task_params['platformVersion'] = 'LATEST'
+
+    # Add tags for dev environment
+    if config.ENVIRONMENT == 'dev':
+        run_task_params['tags'] = [
+            {
+                'key': 'WorkflowInstanceId',
+                'value': integration_id
             },
-            overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': environment,
-                        'command': command,
-                    },
-                ],
-        })
+            {
+                'key': 'ComputeNode',
+                'value': config.CLUSTER_NAME
+            },
+            {
+                'key': 'Environment',
+                'value': config.ENVIRONMENT
+            },
+            {
+                'key': 'Project',
+                'value': config.CLUSTER_NAME
+            },
+        ]
+
+    response = ecs_client.run_task(**run_task_params)
 
     task_arn = response['tasks'][0]['taskArn']
     container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
