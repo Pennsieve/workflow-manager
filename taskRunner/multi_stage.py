@@ -286,10 +286,13 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
 
     response = ecs_client.run_task(**run_task_params)
 
-    task_arn = response['tasks'][0]['taskArn']
-    container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
+    if not response.get('tasks'):
+        failure_reason = response.get('failures', [{}])[0].get('reason', 'Unknown')
+        raise Exception(f"Failed to start ECS task: {failure_reason}")
 
-    return task_arn, container_task_arn
+    task_arn = response['tasks'][0]['taskArn']
+
+    return task_arn, task_arn
 
 def poll_task(ecs_client, config, task_arn):
     if config.IS_LOCAL:
