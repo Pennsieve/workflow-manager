@@ -234,7 +234,6 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         'networkConfiguration': {
             'awsvpcConfiguration': {
                 'subnets': config.SUBNET_IDS.split(","),
-                'assignPublicIp': 'ENABLED',
                 'securityGroups': [config.SECURITY_GROUP]
             }
         },
@@ -259,6 +258,8 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
             }
         ]
     else:
+        # assignPublicIp is only supported for Fargate launch type
+        run_task_params['networkConfiguration']['awsvpcConfiguration']['assignPublicIp'] = 'ENABLED'
         run_task_params['launchType'] = 'FARGATE'
         run_task_params['platformVersion'] = 'LATEST'
 
