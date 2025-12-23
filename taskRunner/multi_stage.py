@@ -165,7 +165,7 @@ def main():
         if version == 'v1':
             container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps['runOnGPU']
         else:
-            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps['runOnGPU']
+            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps[0]['runOnGPU']
             
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
