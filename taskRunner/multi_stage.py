@@ -163,9 +163,9 @@ def main():
         apps = getRuntimeVariables(version, app, config, session_token, organization_id) # apps to run in parallel for v2
         # currently supporting one task at a time, not parallel tasks
         if version == 'v1':
-            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps.get('runOnGpu', False)
+            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps.get('runOnGpu', False)
         else:
-            container_name, task_definition_name, application_type, application_uuid, gpu_capacity_provision = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps[0].get('runOnGpu', False)
+            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps[0].get('runOnGpu', False)
             
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
@@ -173,7 +173,7 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, gpu_capacity_provision)
+            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, requires_gpu)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -206,7 +206,7 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app, gpu_capacity_provision):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app, requires_gpu):
     if config.IS_LOCAL:
         if version == 'v2':
             print(f"copying files from {input_dir} to {output_dir}")
@@ -248,8 +248,8 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
         }
     }
 
-    # Use GPU capacity provider or Fargate based on gpu_capacity_provision
-    if gpu_capacity_provision:
+    # Use GPU capacity provider or Fargate based on requires_gpu
+    if requires_gpu:
         run_task_params['capacityProviderStrategy'] = [
             {
                 'capacityProvider': config.GPU_CAPACITY_PROVIDER,
