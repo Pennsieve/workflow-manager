@@ -153,9 +153,9 @@ def main():
         apps = getRuntimeVariables(version, app, config, session_token, organization_id) # apps to run in parallel for v2
         # currently supporting one task at a time, not parallel tasks
         if version == 'v1':
-            container_name, task_definition_name, application_type, application_uuid = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid']
+            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps.get('runOnGpu', False)
         else:
-            container_name, task_definition_name, application_type, application_uuid = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid']
+            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps[0].get('runOnGpu', False)
             
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
@@ -163,13 +163,13 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app)
+            task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, requires_gpu)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
             # gather log related info
-            task_id = container_task_arn.split("/")[2]
+            task_id = task_arn.split("/")[2]
             log_stream_name = "ecs/{0}/{1}".format(container_name, task_id)
             log_group_name = get_log_group_name(ecs_client, config, task_definition_name)
 
@@ -196,7 +196,7 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app, requires_gpu):
     if config.IS_LOCAL:
         if version == 'v2':
             print(f"copying files from {input_dir} to {output_dir}")
@@ -213,80 +213,76 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
                     with open(f'{output_dir}/test-file.txt', "w") as file:
                         file.write(f'Processed by application: {a}')
             
-        return "local-task-arn","container/task-arn/local"
+        return "arn:aws:ecs:local:000000000000:task/local-cluster/local-task-id"
         
 
-    response = {}
-    if config.ENVIRONMENT == 'dev':
-        response = ecs_client.run_task(
-            cluster = config.CLUSTER_NAME,
-            launchType = 'FARGATE',
-            taskDefinition=container_name,
-            count = 1,
-            platformVersion='LATEST',
-            networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': config.SUBNET_IDS.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [config.SECURITY_GROUP]
-                    }   
-            },
-            tags=[
+    # Base run_task parameters
+    run_task_params = {
+        'cluster': config.CLUSTER_NAME,
+        'taskDefinition': container_name,
+        'count': 1,
+        'networkConfiguration': {
+            'awsvpcConfiguration': {
+                'subnets': config.SUBNET_IDS.split(","),
+                'securityGroups': [config.SECURITY_GROUP]
+            }
+        },
+        'overrides': {
+            'containerOverrides': [
                 {
-                    'key': 'WorkflowInstanceId',
-                    'value': integration_id
-                },
-                {
-                    'key': 'ComputeNode',
-                    'value': config.CLUSTER_NAME
-                },
-                {
-                    'key': 'Environment',
-                    'value': config.ENVIRONMENT
-                },
-                {
-                    'key': 'Project',
-                    'value': config.CLUSTER_NAME
+                    'name': container_name,
+                    'environment': environment,
+                    'command': command,
                 },
             ],
-            overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': environment,
-                        'command': command,
-                    },
-                ],
-        })
+        }
+    }
 
-    if config.ENVIRONMENT == 'prod':
-        response = ecs_client.run_task(
-            cluster = config.CLUSTER_NAME,
-            launchType = 'FARGATE',
-            taskDefinition=container_name,
-            count = 1,
-            platformVersion='LATEST',
-            networkConfiguration={
-                'awsvpcConfiguration': {
-                    'subnets': config.SUBNET_IDS.split(","),
-                    'assignPublicIp': 'ENABLED',
-                    'securityGroups': [config.SECURITY_GROUP]
-                    }   
+    # Use GPU capacity provider or Fargate based on requires_gpu
+    if requires_gpu:
+        run_task_params['capacityProviderStrategy'] = [
+            {
+                'capacityProvider': config.GPU_CAPACITY_PROVIDER,
+                'weight': 1,
+                'base': 0
+            }
+        ]
+    else:
+        # assignPublicIp is only supported for Fargate launch type
+        run_task_params['networkConfiguration']['awsvpcConfiguration']['assignPublicIp'] = 'ENABLED'
+        run_task_params['launchType'] = 'FARGATE'
+        run_task_params['platformVersion'] = 'LATEST'
+
+    # Add tags for dev environment
+    if config.ENVIRONMENT == 'dev':
+        run_task_params['tags'] = [
+            {
+                'key': 'WorkflowInstanceId',
+                'value': integration_id
             },
-            overrides={
-                'containerOverrides': [
-                    {
-                        'name': container_name,
-                        'environment': environment,
-                        'command': command,
-                    },
-                ],
-        })
+            {
+                'key': 'ComputeNode',
+                'value': config.CLUSTER_NAME
+            },
+            {
+                'key': 'Environment',
+                'value': config.ENVIRONMENT
+            },
+            {
+                'key': 'Project',
+                'value': config.CLUSTER_NAME
+            },
+        ]
+
+    response = ecs_client.run_task(**run_task_params)
+
+    if not response.get('tasks'):
+        failure_reason = response.get('failures', [{}])[0].get('reason', 'Unknown')
+        raise Exception(f"Failed to start ECS task: {failure_reason}")
 
     task_arn = response['tasks'][0]['taskArn']
-    container_task_arn = response['tasks'][0]['containers'][0]['taskArn']
 
-    return task_arn, container_task_arn
+    return task_arn
 
 def poll_task(ecs_client, config, task_arn):
     if config.IS_LOCAL:

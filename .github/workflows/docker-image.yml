@@ -5,7 +5,12 @@ on:
     tags:
       - '*-test'
       - '*.*.*'  # Match anything resembling semver
-    
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag (leave empty for auto: branch-sha)'
+        required: false
+
 jobs:
   read-tag:
     runs-on: ubuntu-24.04
@@ -14,7 +19,21 @@ jobs:
     steps:
       - name: Read tag
         id: read-tag
-        run: echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ -n "${{ github.event.inputs.tag }}" ]; then
+              # Use manual override if provided
+              echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+            else
+              # Auto-generate: branch-sha
+              BRANCH=$(echo "${{ github.ref_name }}" | sed 's/\//-/g')
+              SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+              echo "TAG=${BRANCH}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            # Tag push: use tag name directly
+            echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
 
   build:
     runs-on: ubuntu-24.04
@@ -33,4 +52,7 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: pennsieve/workflow-manager:${{needs.read-tag.outputs.TAG}}, pennsieve/workflow-manager:latest
+        tags: >-
+          pennsieve/workflow-manager:${{needs.read-tag.outputs.TAG}}${{
+            github.event_name != 'workflow_dispatch' && ', pennsieve/workflow-manager:latest' || ''
+          }}
