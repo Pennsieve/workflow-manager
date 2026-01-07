@@ -173,13 +173,13 @@ def main():
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn, container_task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, requires_gpu)
+            task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, requires_gpu)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
 
             # gather log related info
-            task_id = container_task_arn.split("/")[2]
+            task_id = task_arn.split("/")[2]
             log_stream_name = "ecs/{0}/{1}".format(container_name, task_id)
             log_group_name = get_log_group_name(ecs_client, config, task_definition_name)
 
@@ -223,7 +223,7 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
                     with open(f'{output_dir}/test-file.txt', "w") as file:
                         file.write(f'Processed by application: {a}')
             
-        return "local-task-arn","container/task-arn/local"
+        return "arn:aws:ecs:local:000000000000:task/local-cluster/local-task-id"
         
 
     # Base run_task parameters
@@ -292,7 +292,7 @@ def start_task(ecs_client, config, task_definition_name, container_name, environ
 
     task_arn = response['tasks'][0]['taskArn']
 
-    return task_arn, task_arn
+    return task_arn
 
 def poll_task(ecs_client, config, task_arn):
     if config.IS_LOCAL:
