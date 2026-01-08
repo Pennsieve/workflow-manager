@@ -336,3 +336,31 @@ class UserClient:
         except Exception as e:
             log.error(f"failed to get user profile with error: {e}")
             raise e
+
+    def create_api_key(self, session_token, name="workflow-manager"):
+        """
+        Create a new API key/secret pair for the authenticated user.
+        This can be used with the pennsieve-agent.
+        """
+        url = f"{self.api_host}/token?api_key"
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {session_token}"
+        }
+
+        try:
+            response = requests.post(url, json={"name": name}, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+            return data["key"], data["secret"]
+        except requests.HTTPError as e:
+            log.error(f"failed to create API key with error: {e}")
+            raise e
+        except json.JSONDecodeError as e:
+            log.error(f"failed to decode API key response with error: {e}")
+            raise e
+        except Exception as e:
+            log.error(f"failed to create API key with error: {e}")
+            raise e
