@@ -226,8 +226,24 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				baseDir = "/mnt/efs"
 			}
 
+			// Determine API host for token endpoint
+			var apiHost string
+			if environment == "local" || environment == "dev" {
+				apiHost = "https://api.pennsieve.net"
+			} else {
+				apiHost = "https://api.pennsieve.io"
+			}
+
+			// Create API key for pennsieve-agent
+			apiKeyResponse, err := createAPIKey(apiHost, newMsg.SessionToken, fmt.Sprintf("workflow-%s", integrationID))
+			if err != nil {
+				logger.Error("failed to create API key", slog.String("error", err.Error()))
+				return
+			}
+			logger.Info("created API key for workflow", slog.String("integrationID", integrationID))
+
 			// create workspace sub-directories
-			err := os.Chdir(baseDir)
+			err = os.Chdir(baseDir)
 			if err != nil {
 				logger.Error(err.Error())
 				os.Exit(1)
@@ -284,6 +300,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--integrationID", integrationID,
 				"--sessionToken", newMsg.SessionToken,
 				"--refreshToken", newMsg.RefreshToken,
+				"--apiKey", apiKeyResponse.Key,
+				"--apiSecret", apiKeyResponse.Secret,
 				"--workspaceDir", workspaceDir,
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)
@@ -470,4 +488,47 @@ func (c *Client) Authenticate(apiKey, apiSecret string) (string, error) {
 
 	accessToken := *loginResponse.AuthenticationResult.AccessToken
 	return accessToken, nil
+}
+
+type APIKeyResponse struct {
+	Name   string `json:"name"`
+	Key    string `json:"key"`
+	Secret string `json:"secret"`
+}
+
+func createAPIKey(apiHost string, sessionToken string, name string) (*APIKeyResponse, error) {
+	url := fmt.Sprintf("%s/token?api_key", apiHost)
+
+	requestBody := map[string]string{"name": name}
+	jsonBody, _ := json.Marshal(requestBody)
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", sessionToken))
+
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create API key: %w", err)
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusCreated {
+		return nil, fmt.Errorf("failed to create API key with status: %d", res.StatusCode)
+	}
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var apiKeyResponse APIKeyResponse
+	if err := json.Unmarshal(body, &apiKeyResponse); err != nil {
+		return nil, fmt.Errorf("failed to decode API key response: %w", err)
+	}
+
+	return &apiKeyResponse, nil
 }

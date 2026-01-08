@@ -10,7 +10,7 @@ import sys
 import hashlib
 import shutil
 
-from api import AuthenticationClient, WorkflowInstanceClient, ApplicationClient, UserClient
+from api import AuthenticationClient, WorkflowInstanceClient, ApplicationClient
 from boto3 import client as boto3_client
 from config import Config
 from datetime import datetime, timezone
@@ -35,6 +35,8 @@ def main():
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
     work_directory = sys.argv[9]
+    api_key = sys.argv[10]
+    api_secret = sys.argv[11]
 
     version = 'v1'
     workflow = []
@@ -54,11 +56,6 @@ def main():
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)
     workflow_instance_client = WorkflowInstanceClient(config.API_HOST2)
-    user_client = UserClient(config.API_HOST)
-
-    # Generate API key/secret for pennsieve-agent
-    api_key, api_secret = user_client.create_api_key(session_token, name=f"workflow-{workflowInstanceId}")
-    logger.info(f"created API key for workflow instance: {workflowInstanceId}")
 
     ecs_client = boto3_client("ecs", region_name=config.REGION)
     sts_client = boto3_client("sts")

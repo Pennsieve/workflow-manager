@@ -364,3 +364,26 @@ class UserClient:
         except Exception as e:
             log.error(f"failed to create API key with error: {e}")
             raise e
+
+    def delete_api_key(self, session_token, api_key):
+        """
+        Delete an API key for the authenticated user.
+        Used to clean up API keys created for workflow runs.
+        """
+        url = f"{self.api_host}/token/{api_key}?api_key"
+
+        headers = {
+            "Authorization": f"Bearer {session_token}"
+        }
+
+        try:
+            response = requests.delete(url, headers=headers)
+            response.raise_for_status()
+            log.info(f"successfully deleted API key: {api_key}")
+            return True
+        except requests.HTTPError as e:
+            log.error(f"failed to delete API key with error: {e}")
+            raise e
+        except Exception as e:
+            log.error(f"failed to delete API key with error: {e}")
+            raise e

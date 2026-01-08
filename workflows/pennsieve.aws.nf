@@ -37,13 +37,13 @@ process MultiStageWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.sessionToken}' '${params.refreshToken}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}' '${params.resourcesDir}' '${params.workDir}'
+    python3.9 /service/taskRunner/multi_stage.py '${params.integrationID}' '${params.sessionToken}' '${params.refreshToken}' '$wf' '$inputDir' '$outputDir' '${params.workspaceDir}' '${params.resourcesDir}' '${params.workDir}' '${params.apiKey}' '${params.apiSecret}'
     """
 }
 
 process FinaliseWorkflow {
     debug true
-    
+
     input:
         val wf
     output:
@@ -51,7 +51,7 @@ process FinaliseWorkflow {
 
     script:
     """
-    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.sessionToken} ${params.refreshToken}
+    python3.9 /service/taskRunner/finalise.py ${params.integrationID} ${params.sessionToken} ${params.refreshToken} ${params.apiKey}
     """
 }
 
