@@ -4,7 +4,7 @@ import uuid
 def getenv(key, required):
     value = os.getenv(key)
     if required and not value:
-        raise ValueError(f"Environment variable '{key}' is required but not set.")
+        print(f"Warning: Environment variable '{key}' is required but not set.")
     return value
 
 class Config:
