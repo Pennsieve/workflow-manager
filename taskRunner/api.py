@@ -131,7 +131,7 @@ class WorkflowClient:
         self.api_host = api_host
 
     def get_workflow(self, workflowUuid, session_token):
-        url = f"{self.api_host}/compute/workflows/{workflowUuid}"
+        url = f"{self.api_host}/compute/workflows/definitions/{workflowUuid}"
 
         headers = {
             "Accept": "application/json",
