@@ -173,7 +173,7 @@ class WorkflowInstanceClient:
         self.api_host = api_host
 
     def get_workflow_instance(self, workflow_instance_id, session_token):
-        url = f"{self.api_host}/workflows/instances/{workflow_instance_id}"
+        url = f"{self.api_host}/compute/workflows/instances/{workflow_instance_id}"
 
         headers = {
             "Accept": "application/json",
@@ -197,7 +197,7 @@ class WorkflowInstanceClient:
             raise e
 
     def put_workflow_instance_status(self, workflow_instance_id, status, timestamp, session_token):
-        url = f"{self.api_host}/workflows/instances/{workflow_instance_id}/status"
+        url = f"{self.api_host}/compute/workflows/instances/{workflow_instance_id}/status"
 
         headers = {
             "Content-Type": 'application/json',
@@ -223,7 +223,7 @@ class WorkflowInstanceClient:
             log.error(f"failed to update workflow instance status with error: {e}")
 
     def put_workflow_instance_processor_status(self, workflow_instance_id, processor_id, status, timestamp, session_token):
-        url = f"{self.api_host}/workflows/instances/{workflow_instance_id}/processor/{processor_id}/status"
+        url = f"{self.api_host}/compute/workflows/instances/{workflow_instance_id}/processor/{processor_id}/status"
 
         headers = {
             "Content-Type": 'application/json',
@@ -254,7 +254,7 @@ class WorkflowClient:
         self.api_host = api_host
 
     def get_workflow(self, workflowUuid, session_token):
-        url = f"{self.api_host}/workflows/{workflowUuid}"
+        url = f"{self.api_host}/compute/workflows/definitions/{workflowUuid}"
 
         headers = {
             "Accept": "application/json",

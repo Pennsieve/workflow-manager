@@ -355,7 +355,7 @@ type WorkflowInstance struct {
 }
 
 func getIntegration(apiHost string, workflowInstanceId string, sessionToken string) ([]byte, error) {
-	url := fmt.Sprintf("%s/workflows/instances/%s", apiHost, workflowInstanceId)
+	url := fmt.Sprintf("%s/compute/workflows/instances/%s", apiHost, workflowInstanceId)
 
 	req, _ := http.NewRequest("GET", url, nil)
 
@@ -374,7 +374,7 @@ func getIntegration(apiHost string, workflowInstanceId string, sessionToken stri
 }
 
 func putWorkflowInstanceStatus(apiHost string, workflowInstanceId string, status string, timestamp int64, sessionToken string) ([]byte, error) {
-	url := fmt.Sprintf("%s/workflows/instances/%s/status", apiHost, workflowInstanceId)
+	url := fmt.Sprintf("%s/compute/workflows/instances/%s/status", apiHost, workflowInstanceId)
 
 	requestBody := map[string]interface{}{
 		"status":    status,
