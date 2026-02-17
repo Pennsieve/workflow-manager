@@ -7,8 +7,8 @@ Registers a temporary ECS task definition pointing at Account A's private ECR,
 runs it on Account B's cluster, and reports whether the image pull succeeded.
 
 Required env vars:
-  TEST_ECR_IMAGE      - Full image URI from Account A
-                        e.g. 740463337177.dkr.ecr.us-east-1.amazonaws.com/repo:tag
+  TEST_ECR_IMAGE            - Full cross-account ECR image URI (e.g. <account>.dkr.ecr.<region>.amazonaws.com/repo:tag)
+  TASK_EXECUTION_ROLE_ARN   - ECS task execution role ARN with ECR pull permissions
 
 Uses existing env vars from Config: CLUSTER_NAME, SUBNET_IDS, SECURITY_GROUP_ID, REGION
 """
@@ -71,7 +71,7 @@ def main():
         else:
             logger.error(f"FAIL: {result['reason']}")
             if "CannotPullContainerError" in result.get("reason", ""):
-                logger.error("The ECR resource policy on Account A likely does not allow Account B to pull.")
+                logger.error("The ECR resource policy on the source account likely does not allow this account to pull.")
             sys.exit(1)
 
     finally:
