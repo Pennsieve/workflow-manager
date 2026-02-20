@@ -170,22 +170,22 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			apiHost2 = "https://api2.pennsieve.io"
 		}
 
-		workflowInstanceResponse, err := getIntegration(apiHost2, newMsg.IntegrationID, newMsg.SessionToken)
+		workflowInstanceResponse, err := getRun(apiHost2, newMsg.IntegrationID, newMsg.SessionToken)
 		if err != nil {
 			logger.Error(err.Error())
 		}
 
-		var workflowInstance WorkflowInstance
-		if err := json.Unmarshal(workflowInstanceResponse, &workflowInstance); err != nil {
+		var executionRun ExecutionRun
+		if err := json.Unmarshal(workflowInstanceResponse, &executionRun); err != nil {
 			logger.Error(err.Error())
 		}
-		fmt.Println(workflowInstance)
+		fmt.Println(executionRun)
 
-		if workflowInstance.Status == "STARTED" || workflowInstance.Status == "SUCCEEDED" {
+		if executionRun.Status == "STARTED" || executionRun.Status == "SUCCEEDED" {
 			// This is a retry after 12 hours, but job already processed
 			logger.Info("job already processed, deleting message",
 				slog.String("workflowInstanceId", newMsg.IntegrationID),
-				slog.String("status", workflowInstance.Status))
+				slog.String("status", executionRun.Status))
 
 			_, err = sqsSvc.DeleteMessage(ctx, &sqs.DeleteMessageInput{
 				QueueUrl:      &queueUrl,
@@ -198,13 +198,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			continue
 		}
 
-		if workflowInstance.Status == "NOT_STARTED" {
+		if executionRun.Status == "NOT_STARTED" {
 			logger.Info("job not started yet, processing message and setting status to STARTED",
 				slog.String("workflowInstanceId", newMsg.IntegrationID),
-				slog.String("status", workflowInstance.Status))
+				slog.String("status", executionRun.Status))
 
 			// Update workflow status to "started"
-			_, err = putWorkflowInstanceStatus(
+			_, err = putRunStatus(
 				apiHost2,
 				newMsg.IntegrationID,
 				"STARTED",
@@ -349,13 +349,13 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 	return true, nil
 }
 
-type WorkflowInstance struct {
+type ExecutionRun struct {
 	Uuid   string `json:"uuid"`
 	Status string `json:"status"`
 }
 
-func getIntegration(apiHost string, workflowInstanceId string, sessionToken string) ([]byte, error) {
-	url := fmt.Sprintf("%s/compute/workflows/instances/%s", apiHost, workflowInstanceId)
+func getRun(apiHost string, workflowInstanceId string, sessionToken string) ([]byte, error) {
+	url := fmt.Sprintf("%s/compute/workflows/runs/%s", apiHost, workflowInstanceId)
 
 	req, _ := http.NewRequest("GET", url, nil)
 
@@ -373,8 +373,8 @@ func getIntegration(apiHost string, workflowInstanceId string, sessionToken stri
 	return body, nil
 }
 
-func putWorkflowInstanceStatus(apiHost string, workflowInstanceId string, status string, timestamp int64, sessionToken string) ([]byte, error) {
-	url := fmt.Sprintf("%s/compute/workflows/instances/%s/status", apiHost, workflowInstanceId)
+func putRunStatus(apiHost string, workflowInstanceId string, status string, timestamp int64, sessionToken string) ([]byte, error) {
+	url := fmt.Sprintf("%s/compute/workflows/runs/%s/status", apiHost, workflowInstanceId)
 
 	requestBody := map[string]interface{}{
 		"status":    status,
