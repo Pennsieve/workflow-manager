@@ -4,7 +4,6 @@ import csv
 import json
 import logging
 import os
-import requests
 import subprocess
 import sys
 import hashlib
@@ -16,6 +15,44 @@ from config import Config
 from datetime import datetime, timezone
 
 logger = logging.getLogger('WorkflowManager')
+
+def validate_linear_chain(nodes):
+    """Validate DAG is a linear chain and return nodes in execution order."""
+    if not nodes:
+        raise ValueError("workflow has no nodes")
+
+    by_id = {n["id"]: n for n in nodes}
+
+    # Find root(s)
+    roots = [n for n in nodes if not n.get("dependsOn")]
+    if len(roots) != 1:
+        raise ValueError(f"expected 1 root node, found {len(roots)}")
+
+    # Build child map: parentId → childId
+    children = {}
+    for n in nodes:
+        for dep_id in (n.get("dependsOn") or []):
+            if dep_id in children:
+                raise ValueError(f"node {dep_id} has multiple dependents — not a linear chain")
+            children[dep_id] = n["id"]
+
+    # Validate each node has at most 1 dependency
+    for n in nodes:
+        if len(n.get("dependsOn") or []) > 1:
+            raise ValueError(f"node {n['id']} has multiple dependencies — not a linear chain")
+
+    # Walk the chain
+    ordered = [roots[0]]
+    current = roots[0]["id"]
+    while current in children:
+        next_id = children[current]
+        ordered.append(by_id[next_id])
+        current = next_id
+
+    if len(ordered) != len(nodes):
+        raise ValueError(f"chain has {len(ordered)} nodes but workflow has {len(nodes)}")
+
+    return ordered
 
 def main():
     # Setup logging
@@ -29,27 +66,19 @@ def main():
     workflowInstanceId = sys.argv[1]
     session_token = sys.argv[2]
     refresh_token = sys.argv[3]
-    workflowVersionMappingObject = json.loads(sys.argv[4])
+    execution_run = json.loads(sys.argv[4])
     input_directory = sys.argv[5]
     output_directory = sys.argv[6]
     workspace_directory = sys.argv[7]
     resources_directory = sys.argv[8]
     work_directory = sys.argv[9]
 
-    version = 'v1'
-    workflow = []
-    organization_id = ""
+    nodes = execution_run["nodes"]
+    organization_id = execution_run["organizationId"]
 
-    if workflowVersionMappingObject['v1'] is not None:
-        logger.info("running v1 workflow")
-        workflow = workflowVersionMappingObject['v1']
+    ordered_nodes = validate_linear_chain(nodes)
 
-    if workflowVersionMappingObject['v2'] is not None:
-        version = 'v2'
-        logger.info("running v2 workflow")
-        workflow = workflowVersionMappingObject['v2']
-
-    logger.info("running task runner for workflow instance ID={0}, version={1}".format(workflowInstanceId, version))
+    logger.info("running task runner for workflow instance ID={0}".format(workflowInstanceId))
 
     config = Config()
     auth_client = AuthenticationClient(config.API_HOST)
@@ -64,16 +93,12 @@ def main():
         writer.writerow(header)
         csvfile.close()
 
-    # v2: # loop through executionOrder and use DAG to determine INPUT_DIR and OUTPUT_DIR
-    if version == 'v2':
-        workflow = workflowVersionMappingObject['v2']['executionOrder']
-        organization_id = workflowVersionMappingObject['v2']['organizationId']
-    else:
-        workflow = workflowVersionMappingObject['v1']
- 
-    for app in workflow:
-        input_directory, output_directory = setupDirectories(version, app, workflowVersionMappingObject, input_directory, output_directory, work_directory)
-        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory)) # TODO: remove
+    # Build nodeId → sourceUrl lookup for dependency resolution
+    node_source_urls = {n["id"]: n["sourceUrl"] for n in ordered_nodes}
+
+    for node in ordered_nodes:
+        input_directory, output_directory = setupDirectories(node, node_source_urls, input_directory, output_directory, work_directory)
+        logger.info("input_directory: {0}, output_directory: {1}".format(input_directory, output_directory))
 
         environment = [
             {
@@ -134,36 +159,22 @@ def main():
             },
         ]
 
-        # TODO: determine params for v2
-        if 'params' in app:
-            application_params = app['params']
-            for key, value in application_params.items():
-                new_param = {
-                    'name': f'{key}'.upper(),
-                    'value': f'{value}'
-                }
-                environment.append(new_param)
+        command = []
 
-        # currently not used
-        if version == 'v1':
-            command = app.get('commandArguments', [])
-        else:
-            command = [] 
+        application = getRuntimeVariables(node["sourceUrl"], config, session_token, organization_id)
+        container_name = application['applicationContainerName']
+        task_definition_name = application['applicationId']
+        application_type = application['applicationType']
+        application_uuid = application['uuid']
+        requires_gpu = application.get('runOnGpu', False)
 
-        apps = getRuntimeVariables(version, app, config, session_token, organization_id) # apps to run in parallel for v2
-        # currently supporting one task at a time, not parallel tasks
-        if version == 'v1':
-            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps['applicationContainerName'], apps['applicationId'], apps['applicationType'], apps['uuid'], apps.get('runOnGpu', False)
-        else:
-            container_name, task_definition_name, application_type, application_uuid, requires_gpu = apps[0]['applicationContainerName'], apps[0]['applicationId'], apps[0]['applicationType'], apps[0]['uuid'], apps[0].get('runOnGpu', False)
-            
         logger.info("starting: container_name={0}, application_type={1}, task_definition_name={2}".format(container_name, application_type, task_definition_name))
 
         if config.IS_LOCAL or config.CLUSTER_NAME != "":
             logger.info("starting fargate task"  + task_definition_name)
 
             now = datetime.now(timezone.utc).timestamp()
-            task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, version, workflowVersionMappingObject, app, requires_gpu)
+            task_arn = start_task(ecs_client, config, task_definition_name, container_name, environment, command, workflowInstanceId, input_directory, output_directory, node, requires_gpu)
             workflow_instance_client.put_workflow_instance_processor_status(workflowInstanceId, application_uuid, 'STARTED', now, session_token)
 
             logger.info("started: container_name={0},application_type={1}".format(container_name, application_type))
@@ -196,25 +207,20 @@ def main():
 
     logger.info("fargate task has stopped: " + task_definition_name)
 
-def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, version, workflowVersionMappingObject, app, requires_gpu):
+def start_task(ecs_client, config, task_definition_name, container_name, environment, command, integration_id, input_dir, output_dir, node, requires_gpu):
     if config.IS_LOCAL:
-        if version == 'v2':
+        deps = node.get("dependsOn") or []
+        if len(deps) == 0:
+            with open(f'{output_dir}/test-file.txt', "w") as file:
+                file.write(f'Initialisation started by application: {node["sourceUrl"]}')
+        else:
             print(f"copying files from {input_dir} to {output_dir}")
-            dag = workflowVersionMappingObject['v2']['dag']
+            shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
+            with open(f'{output_dir}/test-file.txt', "w") as file:
+                file.write(f'Processed by application: {node["sourceUrl"]}')
 
-            logger.info("initialise data") 
-            for a in app:
-                dependencies = dag[a]
-                if len(dependencies) == 0:
-                    with open(f'{output_dir}/test-file.txt', "w") as file:
-                        file.write(f'Initialisation started by application: {a}')
-                else:
-                    shutil.copytree(input_dir, output_dir, dirs_exist_ok=True)
-                    with open(f'{output_dir}/test-file.txt', "w") as file:
-                        file.write(f'Processed by application: {a}')
-            
         return "arn:aws:ecs:local:000000000000:task/local-cluster/local-task-id"
-        
+
 
     # Base run_task parameters
     run_task_params = {
@@ -310,7 +316,7 @@ def poll_task(ecs_client, config, task_arn):
     else:
         logger.info(container)
         return -1 # error
-        
+
     return exit_code
 
 def get_log_group_name(ecs_client, config, task_definition_name):
@@ -332,55 +338,34 @@ def sync_logs(sts_client, config, integration_id, workspace_directory):
     prefix = "{0}/logs/{1}".format(config.ENVIRONMENT, integration_id)
 
     try:
-        output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)]) 
+        output = subprocess.run(["aws", "s3", "sync", workspace_directory, "s3://{0}/{1}/".format(bucket_name, prefix)])
         logger.info(output)
     except subprocess.CalledProcessError as e:
         logger.info(f"command failed with return code {e.returncode}")
 
-def setupDirectories(version, app, workflowVersionMappingObject, input_dir, output_dir, work_dir):
-    if version == 'v1':
-        return input_dir, output_dir
-    
-    logger.info(f"setting up directories for version: {version}, app: {app}")
+def setupDirectories(node, node_source_urls, input_dir, output_dir, work_dir):
+    logger.info(f"setting up directories for node: {node['id']}")
 
     v2_input_dir = ""
-    v2_output_dir = ""
-    dag = workflowVersionMappingObject['v2']['dag']
-    logger.info("determining input directory") 
-    for a in app:
-        dependencies = dag[a]
-        # for now, only support one dependency
-        # applications with no dependencies will have input_dir as ""
-        if len(dependencies) > 0:
-            if len(dependencies) == 1:
-                for dependency in dependencies:
-                    input_dir_hash = hashlib.sha256(dependency.encode()).hexdigest()
-                    v2_input_dir = os.path.join(work_dir, input_dir_hash[:12])
-                    os.makedirs(v2_input_dir, exist_ok=True)
-            else:
-                logger.error("multiple dependencies not supported yet")
-                sys.exit(1)
+    deps = node.get("dependsOn") or []
 
-        output_dir_hash = hashlib.sha256(a.encode()).hexdigest()    
-        v2_output_dir = os.path.join(work_dir, output_dir_hash[:12])
-        os.makedirs(v2_output_dir, exist_ok=True)
+    if len(deps) > 0:
+        dep_source_url = node_source_urls[deps[0]]
+        input_dir_hash = hashlib.sha256(dep_source_url.encode()).hexdigest()
+        v2_input_dir = os.path.join(work_dir, input_dir_hash[:12])
+        os.makedirs(v2_input_dir, exist_ok=True)
 
-    return v2_input_dir, v2_output_dir             
+    output_dir_hash = hashlib.sha256(node["sourceUrl"].encode()).hexdigest()
+    v2_output_dir = os.path.join(work_dir, output_dir_hash[:12])
+    os.makedirs(v2_output_dir, exist_ok=True)
 
-def getRuntimeVariables(version, app, config, session_token, organization_id):
-    # Placeholder for actual logic to determine runtime variables
-    if version == 'v1':
-        return app
-    
-    applications = []
-    # for v2 app is a list of applications to run in parallel
-    for a in app:
-        logger.info(f"fetching application details for: {a}")
-        application_client = ApplicationClient(config.API_HOST2)
-        application = application_client.get_application(a, session_token, organization_id)
-        applications.append(application[0])
+    return v2_input_dir, v2_output_dir
 
-    return applications
+def getRuntimeVariables(source_url, config, session_token, organization_id):
+    logger.info(f"fetching application details for: {source_url}")
+    application_client = ApplicationClient(config.API_HOST2)
+    application = application_client.get_application(source_url, session_token, organization_id)
+    return application[0]
 
 
 if __name__ == '__main__':
