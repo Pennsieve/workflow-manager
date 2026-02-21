@@ -279,7 +279,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			logger.Info("Starting debugging")
 			cmd := exec.Command("nextflow",
 				"-log", nextflowLogPath,
-				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"run", "./workflows/test.ecr.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
 				"--sessionToken", newMsg.SessionToken,
