@@ -7,16 +7,15 @@
 
 nextflow.enable.dsl=2
 
-params.sessionToken = ''
 params.sourceUrl = ''
 params.sourceVersion = ''
 
 log.info """\
     CROSS-ACCOUNT ECR PULL TEST
     ===================================
-    sessionToken: ${params.sessionToken ? 'provided' : 'MISSING'}
     sourceUrl: ${params.sourceUrl ?: 'MISSING'}
     sourceVersion: ${params.sourceVersion ?: 'MISSING'}
+    SESSION_TOKEN: ${System.getenv('SESSION_TOKEN') ? 'provided' : 'MISSING'}
     """.stripIndent(true)
 
 process TestEcrPull {
@@ -27,7 +26,6 @@ process TestEcrPull {
 
     shell:
     '''
-    export SESSION_TOKEN='!{params.sessionToken}'
     export SOURCE_URL='!{params.sourceUrl}'
     export SOURCE_VERSION='!{params.sourceVersion}'
     python3.9 /service/taskRunner/test_ecr_pull.py

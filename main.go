@@ -285,7 +285,6 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"run", "./workflows/test.ecr.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
-				"--sessionToken", newMsg.SessionToken,
 				"--refreshToken", newMsg.RefreshToken,
 				"--sourceUrl", sourceUrl,
 				"--sourceVersion", sourceVersion,
@@ -293,6 +292,7 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)
 			cmd.Dir = "/service"
+			cmd.Env = append(os.Environ(), fmt.Sprintf("SESSION_TOKEN=%s", newMsg.SessionToken))
 			var stdout strings.Builder
 			var stderr strings.Builder
 			cmd.Stdout = &stdout
