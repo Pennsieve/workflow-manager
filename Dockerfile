@@ -21,7 +21,7 @@ RUN export NXF_VER=24.10.0
 
 RUN apt-get clean
 RUN apt-get -y install software-properties-common && add-apt-repository ppa:deadsnakes/ppa
-RUN apt-get update & apt-get -y install python3.9
+RUN apt-get update && apt-get -y install python3.9
 RUN python3.9 --version
 
 # install AWS CLI
