@@ -3,11 +3,14 @@
 """
 Smoke test for cross-account ECR image pull.
 
-Registers a temporary ECS task definition pointing at Account A's private ECR,
-runs it on Account B's cluster, and reports whether the image pull succeeded.
+Calls the appstore authorize endpoint to resolve the ECR image URI from a
+sourceUrl, then registers a temporary ECS task definition pointing at that
+image, runs it on the cluster, and reports whether the image pull succeeded.
 
 Required env vars:
-  TEST_ECR_IMAGE            - Full cross-account ECR image URI (e.g. <account>.dkr.ecr.<region>.amazonaws.com/repo:tag)
+  SOURCE_URL                - Application source URL (e.g. https://github.com/org/repo)
+  SOURCE_VERSION            - Application version (e.g. v1.0.8)
+  SESSION_TOKEN             - Valid Pennsieve session token
   TASK_EXECUTION_ROLE_ARN   - ECS task execution role ARN with ECR pull permissions
 
 Uses existing env vars from Config: CLUSTER_NAME, SUBNET_IDS, SECURITY_GROUP_ID, REGION
@@ -17,6 +20,7 @@ import logging
 import os
 import sys
 
+import requests
 from boto3 import client as boto3_client
 from config import Config
 
@@ -35,17 +39,27 @@ def main():
 
     config = Config()
 
-    test_image = os.getenv("TEST_ECR_IMAGE")
+    source_url = os.getenv("SOURCE_URL")
+    source_version = os.getenv("SOURCE_VERSION")
+    session_token = os.getenv("SESSION_TOKEN")
     execution_role_arn = os.getenv("TASK_EXECUTION_ROLE_ARN")
 
-    if not test_image:
-        logger.error("TEST_ECR_IMAGE env var is required")
+    if not source_url:
+        logger.error("SOURCE_URL env var is required")
+        sys.exit(1)
+    if not source_version:
+        logger.error("SOURCE_VERSION env var is required")
+        sys.exit(1)
+    if not session_token:
+        logger.error("SESSION_TOKEN env var is required")
         sys.exit(1)
     if not execution_role_arn:
         logger.error("TASK_EXECUTION_ROLE_ARN env var is required (set in workflow manager environment)")
         sys.exit(1)
 
-    logger.info(f"Testing cross-account ECR pull: {test_image}")
+    # 1. Resolve the ECR image URI via the appstore authorize endpoint
+    image_uri = authorize_image(config, source_url, source_version, session_token)
+    logger.info(f"Resolved image URI: {image_uri}")
     logger.info(f"Execution role: {execution_role_arn}")
     logger.info(f"Cluster: {config.CLUSTER_NAME}")
 
@@ -53,18 +67,18 @@ def main():
     task_def_arn = None
 
     try:
-        # 1. Register a temporary task definition
-        task_def_arn = register_task_definition(ecs_client, config, test_image, execution_role_arn)
+        # 2. Register a temporary task definition
+        task_def_arn = register_task_definition(ecs_client, config, image_uri, execution_role_arn)
         logger.info(f"Registered task definition: {task_def_arn}")
 
-        # 2. Run the task
+        # 3. Run the task
         task_arn = run_test_task(ecs_client, config, TASK_FAMILY)
         logger.info(f"Started task: {task_arn}")
 
-        # 3. Poll until the task stops
+        # 4. Poll until the task stops
         result = poll_task(ecs_client, config, task_arn)
 
-        # 4. Report result
+        # 5. Report result
         if result["success"]:
             logger.info("PASS: Cross-account ECR pull succeeded")
             logger.info(f"Container exit code: {result['exit_code']}")
@@ -75,13 +89,43 @@ def main():
             sys.exit(1)
 
     finally:
-        # 5. Cleanup - deregister the temp task definition
+        # 6. Cleanup - deregister the temp task definition
         if task_def_arn:
             try:
                 ecs_client.deregister_task_definition(taskDefinition=task_def_arn)
                 logger.info(f"Deregistered task definition: {task_def_arn}")
             except Exception as e:
                 logger.warning(f"Failed to deregister task definition: {e}")
+
+
+def authorize_image(config, source_url, version, session_token):
+    url = f"{config.API_HOST2}/applications/store/authorize"
+    params = {
+        "sourceUrl": source_url,
+        "version": version,
+        "userId": "ecr-pull-test",
+    }
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {session_token}",
+    }
+
+    logger.info(f"Calling appstore authorize: sourceUrl={source_url}, version={version}")
+    response = requests.get(url, params=params, headers=headers)
+    response.raise_for_status()
+    data = response.json()
+
+    if not data.get("authorized"):
+        message = data.get("message", "Unknown authorization failure")
+        logger.error(f"Appstore authorize denied: {message}")
+        sys.exit(1)
+
+    image_url = data.get("imageUrl")
+    if not image_url:
+        logger.error("Appstore authorize response missing imageUrl")
+        sys.exit(1)
+
+    return image_url
 
 
 def register_task_definition(ecs_client, config, image_uri, execution_role_arn):

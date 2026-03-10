@@ -220,6 +220,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		go func(msg types.Message) {
 			logger.Info("Initializing workspace ...")
 
+			// Set SESSION_TOKEN env var for the test_ecr_pull.py script
+			os.Setenv("SESSION_TOKEN", newMsg.SessionToken)
+
 			integrationID := newMsg.IntegrationID
 			baseDir := os.Getenv("BASE_DIR")
 			if baseDir == "" {
