@@ -220,9 +220,6 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 		go func(msg types.Message) {
 			logger.Info("Initializing workspace ...")
 
-			// Set SESSION_TOKEN env var for the test_ecr_pull.py script
-			os.Setenv("SESSION_TOKEN", newMsg.SessionToken)
-
 			integrationID := newMsg.IntegrationID
 			baseDir := os.Getenv("BASE_DIR")
 			if baseDir == "" {
@@ -280,6 +277,9 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 			logger.Info("Starting analysis pipeline")
 			logger.Info("Starting debugging")
+			sourceUrl := os.Getenv("SOURCE_URL")
+			sourceVersion := os.Getenv("SOURCE_VERSION")
+
 			cmd := exec.Command("nextflow",
 				"-log", nextflowLogPath,
 				"run", "./workflows/test.ecr.nf", "-ansi-log", "false",
@@ -287,6 +287,8 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--integrationID", integrationID,
 				"--sessionToken", newMsg.SessionToken,
 				"--refreshToken", newMsg.RefreshToken,
+				"--sourceUrl", sourceUrl,
+				"--sourceVersion", sourceVersion,
 				"--workspaceDir", workspaceDir,
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)
