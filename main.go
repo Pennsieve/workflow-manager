@@ -277,17 +277,30 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 			nextflowLogPath := fmt.Sprintf("%s/nextflow.log", workspaceDir)
 			logger.Info("Starting analysis pipeline")
 			logger.Info("Starting debugging")
+			sourceUrl := os.Getenv("SOURCE_URL")
+			sourceVersion := os.Getenv("SOURCE_VERSION")
+
 			cmd := exec.Command("nextflow",
 				"-log", nextflowLogPath,
-				"run", "./workflows/pennsieve.aws.nf", "-ansi-log", "false",
+				"run", "./workflows/test.ecr.nf", "-ansi-log", "false",
 				"-w", workspaceDir,
 				"--integrationID", integrationID,
-				"--sessionToken", newMsg.SessionToken,
 				"--refreshToken", newMsg.RefreshToken,
+				"--sourceUrl", sourceUrl,
+				"--sourceVersion", sourceVersion,
 				"--workspaceDir", workspaceDir,
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)
 			cmd.Dir = "/service"
+			// Use session token from SQS message, fall back to container env var
+			sessionToken := newMsg.SessionToken
+			if sessionToken == "" {
+				sessionToken = os.Getenv("SESSION_TOKEN")
+			}
+			logger.Info("session token status",
+				slog.Int("fromSQS", len(newMsg.SessionToken)),
+				slog.Int("final", len(sessionToken)))
+			cmd.Env = append(os.Environ(), fmt.Sprintf("SESSION_TOKEN=%s", sessionToken))
 			var stdout strings.Builder
 			var stderr strings.Builder
 			cmd.Stdout = &stdout
