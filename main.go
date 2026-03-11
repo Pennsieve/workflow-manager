@@ -292,7 +292,15 @@ func processSQS(ctx context.Context, sqsSvc *sqs.Client, queueUrl string, logger
 				"--resourcesDir", resourcesDir,
 				"--workDir", workDir)
 			cmd.Dir = "/service"
-			cmd.Env = append(os.Environ(), fmt.Sprintf("SESSION_TOKEN=%s", newMsg.SessionToken))
+			// Use session token from SQS message, fall back to container env var
+			sessionToken := newMsg.SessionToken
+			if sessionToken == "" {
+				sessionToken = os.Getenv("SESSION_TOKEN")
+			}
+			logger.Info("session token status",
+				slog.Int("fromSQS", len(newMsg.SessionToken)),
+				slog.Int("final", len(sessionToken)))
+			cmd.Env = append(os.Environ(), fmt.Sprintf("SESSION_TOKEN=%s", sessionToken))
 			var stdout strings.Builder
 			var stderr strings.Builder
 			cmd.Stdout = &stdout
